@@ -1,0 +1,18 @@
+# Runtime data — app configs, generated Flutter projects, build artifacts.
+# Lives on the server only; never committed.
+projects/
+
+# Signing material. If any of these ever reach a commit, the upload key is
+# compromised and Google will not reset it.
+*.jks
+*.keystore
+*.p12
+*.pfx
+key.properties
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
