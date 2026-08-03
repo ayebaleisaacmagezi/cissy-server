@@ -24,14 +24,30 @@ Verify with `flutter doctor` before expecting a build to work.
 ## Running it
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
 python3 server.py
 ```
 
-Listens on `:8080`. Set `CISSY_PASSWORD` before starting, or it refuses to bind
-to anything other than localhost.
+No venv, no `pip install` — it uses only the standard library. Listens on
+`127.0.0.1:8080`.
+
+| Variable | Default | |
+|---|---|---|
+| `CISSY_PASSWORD` | none | Shared password. Without it the server refuses to bind to anything but localhost. |
+| `CISSY_HOST` | `127.0.0.1` | |
+| `CISSY_PORT` | `8080` | |
+| `CISSY_ROOT` | this directory | Where `projects/` lives. |
+
+To reach a localhost-only server from your machine:
+
+```bash
+ssh -L 8080:127.0.0.1:8080 you@your-server
+```
+
+Tests:
+
+```bash
+python3 -m unittest discover -s tests -t . -q
+```
 
 ## Layout
 

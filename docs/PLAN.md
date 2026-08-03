@@ -22,7 +22,19 @@ the design: no job queue (a lock is enough) and no accounts (one password).
 
 ---
 
-## Phase 1 — Backend skeleton
+## Decided: no dependencies
+
+Standard library only. `git clone` then `python3 server.py` — no venv, no pip,
+nothing to go wrong on a box that is only touched every few weeks.
+
+The one thing that argued for FastAPI was file uploads. Sidestepped by taking
+raw `PUT` bodies instead of multipart forms, which costs a single line in the
+browser (`fetch(url, {method: 'PUT', body: file})`) and removes the dependency
+entirely. Streaming a build log is easier without a framework than with one.
+
+---
+
+## Phase 1 — Backend skeleton — **done**
 
 Serve `web/` and answer `GET /api/health` with the toolchain versions the server
 actually reports, by running `flutter --version` and `sdkmanager --list`.
@@ -32,7 +44,12 @@ or "the build genuinely broke", and the two are indistinguishable without it.
 
 **Done when:** the browser shows the real Flutter version from the server.
 
-## Phase 2 — Projects
+Built. `GET /api/health` runs `flutter --version` and `java -version` and reads
+`ANDROID_HOME`, and reports what it finds in the sidebar. The Android check
+looks for the directories rather than running `sdkmanager --list`, which reaches
+the network and takes tens of seconds — far too slow for something the UI polls.
+
+## Phase 2 — Projects — **done**
 
 `config.json` per app under `projects/<app-id>/`. Create, read, update, list,
 duplicate. No build yet.
@@ -43,7 +60,19 @@ builder, so it is worth settling before anything depends on it.
 
 **Done when:** apps can be created and edited via the API and survive a restart.
 
-## Phase 3 — Generate
+Built, plus the UI for it — app list, config editor, duplicate and delete.
+Building is shown as an honest "not wired up yet" panel rather than a button
+that does nothing.
+
+Two things worth remembering:
+
+- App ids come from the URL, so `store._safe_id` rejects anything that is not
+  already a clean slug. `../secrets` would otherwise read outside `projects/`.
+- `PUT /api/apps/<id>` drops `id`, `created_at` and `updated_at` from the
+  request. Without that, a stale browser tab could move an app on top of
+  another one.
+
+## Phase 3 — Generate — **next**
 
 `flutter create --platforms=android,ios`, then overwrite `lib/main.dart`,
 `pubspec.yaml`, `AndroidManifest.xml` and `Info.plist` from the config.
