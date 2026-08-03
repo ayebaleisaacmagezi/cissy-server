@@ -65,7 +65,9 @@ async function api(method, path, body) {
 
   const response = await fetch(path, options);
   if (response.status === 401) {
-    await askForPassword();
+    // A password we already held and that was rejected is worth saying so about,
+    // rather than silently reopening an identical-looking prompt.
+    await askForPassword(Boolean(state.password));
     return api(method, path, body);
   }
 
@@ -90,7 +92,9 @@ function toast(message, bad = false) {
 /* ── modals ──────────────────────────────────────────────────────────── */
 
 function openModal(title, subtitle, bodyNodes, actions) {
-  const root = document.getElementById('modal-root');
+  // One modal at a time. Two stacked dialogs share a container, so closing
+  // either would tear down both and strand whatever the other was awaiting.
+  const root = clear(document.getElementById('modal-root'));
   const modal = el('div', { class: 'modal' }, [
     el('h3', { text: title }),
     subtitle ? el('p', { class: 'sub', text: subtitle }) : null,
@@ -108,27 +112,40 @@ function openModal(title, subtitle, bodyNodes, actions) {
   return close;
 }
 
-function askForPassword() {
-  return new Promise((resolve) => {
+/* The page fires several requests at once on load, so a wrong or missing
+ * password produces several 401s at the same moment. They must all wait on one
+ * prompt: opening a dialog per request strands every request but the one the
+ * user happens to answer. */
+let passwordPrompt = null;
+
+function askForPassword(wasWrong = false) {
+  if (passwordPrompt) return passwordPrompt;
+
+  passwordPrompt = new Promise((resolve) => {
     const input = el('input', {
       class: 'input',
       type: 'password',
       placeholder: 'Server password',
+      value: '',
     });
     const submit = () => {
+      if (!input.value) return;
       state.password = input.value;
       localStorage.setItem('cissy-password', input.value);
+      passwordPrompt = null;
       close();
       resolve();
     };
     input.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
     const close = openModal(
-      'Password required',
-      'Set with CISSY_PASSWORD when the server was started.',
+      wasWrong ? 'That password was not accepted' : 'Password required',
+      'Whatever CISSY_PASSWORD was set to when the server was started.',
       [el('div', { class: 'field' }, [input])],
       [el('button', { class: 'btn primary', text: 'Unlock', onclick: submit })],
     );
   });
+
+  return passwordPrompt;
 }
 
 /* ── health ──────────────────────────────────────────────────────────── */
