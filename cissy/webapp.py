@@ -155,10 +155,10 @@ class Application:
             ios_bundle_id=str(data.get("ios_bundle_id") or package).strip(),
             allowed_domains=tuple(_domains(data.get("website_url"))),
         )
-        return {"app": self.store.create(config).to_json()}
+        return {"app": self._app_json(self.store.create(config))}
 
     def get_app(self, request: Request) -> dict[str, Any]:
-        return {"app": self.store.get(request.params["app_id"]).to_json()}
+        return {"app": self._app_json(self.store.get(request.params["app_id"]))}
 
     def update_app(self, request: Request) -> dict[str, Any]:
         app_id = request.params["app_id"]
@@ -173,7 +173,7 @@ class Application:
         data.pop("updated_at", None)
 
         merged = {**current.to_json(), **data, "id": app_id}
-        return {"app": self.store.save(AppConfig.from_json(merged)).to_json()}
+        return {"app": self._app_json(self.store.save(AppConfig.from_json(merged)))}
 
     def delete_app(self, request: Request) -> dict[str, Any]:
         self.store.delete(request.params["app_id"])
@@ -183,7 +183,20 @@ class Application:
         data = request.json()
         source = self.store.get(request.params["app_id"])
         name = str(data.get("name") or f"{source.name} copy").strip()
-        return {"app": self.store.duplicate(source.id, name).to_json()}
+        return {"app": self._app_json(self.store.duplicate(source.id, name))}
+
+    def _app_json(self, config: AppConfig) -> dict[str, Any]:
+        """The config as the browser sees it, plus the next build's version code.
+
+        Resolved here rather than in the browser so the rule for choosing one
+        lives in a single place. The build screen and the actual build would
+        otherwise be free to disagree about what is about to be built.
+        """
+        payload = config.to_json()
+        payload["next_version_code"] = config.next_version_code(
+            self.store.used_version_codes(config.id)
+        )
+        return payload
 
     # ── files ────────────────────────────────────────────────────────────
 
@@ -223,7 +236,7 @@ class Application:
         (assets / name).write_bytes(request.body)
 
         saved = self.store.save(config.updated(**{field: name}))
-        return {"app": saved.to_json()}
+        return {"app": self._app_json(saved)}
 
     def remove_file(self, request: Request) -> dict[str, Any]:
         app_id = request.params["app_id"]
@@ -240,7 +253,7 @@ class Application:
         if slot == "keystore":
             # An alias without a keystore would read as "signed" everywhere.
             changes["key_alias"] = None
-        return {"app": self.store.save(config.updated(**changes)).to_json()}
+        return {"app": self._app_json(self.store.save(config.updated(**changes)))}
 
     # ── builds ───────────────────────────────────────────────────────────
 
@@ -265,12 +278,14 @@ class Application:
 
         credentials = self._credentials(config, data)
 
-        # Bump before building so the artifact and the stored version agree, and
-        # so a second build can never reuse a version code Play has seen.
+        # Settle the version code before building so the artifact and the stored
+        # version can never disagree. This only moves it when the current one
+        # has actually been built under — a first build keeps the code it was
+        # created with rather than shipping as 2.
         if data.get("bump_version", True):
-            config = self.store.save(
-                config.updated(version_code=config.next_version_code())
-            )
+            resolved = config.next_version_code(self.store.used_version_codes(config.id))
+            if resolved != config.version_code:
+                config = self.store.save(config.updated(version_code=resolved))
 
         build = self.builds.start(config, output=output, credentials=credentials)
         return {"build": build.to_json()}

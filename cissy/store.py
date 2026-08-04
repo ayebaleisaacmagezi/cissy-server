@@ -171,6 +171,25 @@ class ProjectStore:
             reverse=True,
         )
 
+    def used_version_codes(self, app_id: str) -> set[int]:
+        """Version codes this app has already built under.
+
+        Read from the build records rather than tracked on the config, because
+        the config only remembers the most recent one. Play refuses an upload
+        that reuses any earlier code, not just the last.
+        """
+        codes: set[int] = set()
+        for number in self.build_numbers(app_id):
+            record = self.build_dir(app_id, number) / "build.json"
+            try:
+                data = json.loads(record.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            code = data.get("version_code")
+            if isinstance(code, int):
+                codes.add(code)
+        return codes
+
     # ── internals ────────────────────────────────────────────────────────
 
     def _write(self, config: AppConfig) -> None:

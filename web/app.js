@@ -407,7 +407,7 @@ async function showApp(appId) {
       kv('Website', hostOf(draft.website_url)),
       kv('Package', draft.android_package_id),
       kv('Features', `${(draft.features || []).length} enabled`),
-      kv('Next version', `${draft.version_name} (${app.version_code + 1})`),
+      kv('Next build', `${draft.version_name} (${app.next_version_code})`),
       kv('Signing', app.keystore_file && app.key_alias ? 'Upload key' : 'Debug key'),
       el('button', {
         class: 'btn primary', style: 'width:100%;justify-content:center;margin-top:14px',
@@ -732,8 +732,10 @@ function buildDialog(app) {
   const body = [
     field('Output', output),
     el('div', { class: 'banner info' }, [
-      el('b', { text: `Will build version ${app.version_name} (${app.version_code + 1})` }),
-      'The version code is bumped automatically. Play rejects an upload that reuses one.',
+      el('b', { text: `Will build version ${app.version_name} (${app.next_version_code})` }),
+      app.next_version_code === app.version_code
+        ? 'This app has not been built at this version code yet, so it is used as it stands.'
+        : 'The version code moves up because this app has already built at the current one, and Play rejects an upload that reuses a code.',
     ]),
   ];
 

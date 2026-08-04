@@ -10,6 +10,7 @@ alias are stored; the passwords are supplied per build and never written here.
 from __future__ import annotations
 
 import re
+from collections.abc import Collection
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from typing import Any
@@ -111,8 +112,26 @@ class AppConfig:
         """
         return bool(self.keystore_file) and bool(self.key_alias)
 
-    def next_version_code(self) -> int:
-        return self.version_code + 1
+    def next_version_code(self, used: Collection[int] = ()) -> int:
+        """The version code the next build should carry.
+
+        Not simply `version_code + 1`. A newly created app has never built
+        anything, so incrementing straight away would ship its first build as
+        version code 2 and quietly burn 1 — which reads as a bug to anyone
+        looking at their first artifact.
+
+        It also leaves a hand-set code alone when nothing has used it, which is
+        what someone migrating an existing Play listing needs: they set 47
+        because that is where their published app is, and the first build here
+        must be 47 rather than 48.
+
+        Once a code has been built under, the next one has to clear every code
+        already used, not just the current one — Play rejects a reused code
+        even if the config has since been edited downwards.
+        """
+        if self.version_code not in used:
+            return self.version_code
+        return max(used) + 1
 
     # ── serialisation ────────────────────────────────────────────────────
 
