@@ -21,7 +21,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from queue import Empty, Queue
 from typing import Any, Callable
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 from .build import BuildRunner
 from .config import AppConfig, slugify
@@ -396,10 +396,18 @@ class Application:
     # ── dispatch ─────────────────────────────────────────────────────────
 
     def authorised(self, headers: Any) -> bool:
+        """Accept the password from a header or a cookie.
+
+        The header is what the page's own requests use. The cookie exists for
+        downloads: an artifact is an ordinary link, and a browser following one
+        sends no custom headers — which surfaced as Chrome refusing every
+        download with "try to sign in to the site".
+        """
         if not self.password:
             return True
-        supplied = headers.get("X-Cissy-Password", "")
-        return hmac.compare_digest(supplied, self.password)
+        if hmac.compare_digest(headers.get("X-Cissy-Password", ""), self.password):
+            return True
+        return hmac.compare_digest(_cookie(headers, "cissy_password"), self.password)
 
     def static_file(self, path: str) -> tuple[bytes, str] | None:
         """Resolve a path under web/, refusing anything that escapes it."""
@@ -595,6 +603,21 @@ class RequestHandler(BaseHTTPRequestHandler):
 def serve(app: Application, host: str, port: int) -> ThreadingHTTPServer:
     handler = type("BoundHandler", (RequestHandler,), {"application": app})
     return ThreadingHTTPServer((host, port), handler)
+
+
+def _cookie(headers: Any, name: str) -> str:
+    """One cookie's value, or an empty string.
+
+    Parsed by hand rather than with http.cookies, which raises on values this
+    has no business rejecting over — the password is chosen by whoever starts
+    the server.
+    """
+    raw = headers.get("Cookie", "") or ""
+    for part in raw.split(";"):
+        key, sep, value = part.strip().partition("=")
+        if sep and key == name:
+            return unquote(value)
+    return ""
 
 
 def _number(value: str) -> int:

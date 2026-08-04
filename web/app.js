@@ -62,6 +62,16 @@ function authHeaders(extra = {}) {
   return headers;
 }
 
+/* Artifact downloads are ordinary links, and a browser following one sends no
+ * custom headers — so the password has to travel as a cookie too, or every
+ * download comes back 401 and Chrome says "try to sign in to the site". */
+function rememberPassword(password) {
+  state.password = password;
+  localStorage.setItem('cissy-password', password);
+  document.cookie =
+    `cissy_password=${encodeURIComponent(password)}; path=/; SameSite=Strict; max-age=31536000`;
+}
+
 async function api(method, path, body) {
   const options = { method, headers: authHeaders() };
   if (body !== undefined) {
@@ -174,8 +184,7 @@ function askForPassword(wasWrong = false) {
     const input = el('input', { class: 'input', type: 'password', value: '' });
     const submit = () => {
       if (!input.value) return;
-      state.password = input.value;
-      localStorage.setItem('cissy-password', input.value);
+      rememberPassword(input.value);
       passwordPrompt = null;
       close();
       resolve();
@@ -1048,6 +1057,8 @@ window.addEventListener('hashchange', route);
 window.addEventListener('beforeunload', (event) => {
   if (state.dirty) event.preventDefault();
 });
+
+if (state.password) rememberPassword(state.password);
 
 route();
 refreshHealth();
