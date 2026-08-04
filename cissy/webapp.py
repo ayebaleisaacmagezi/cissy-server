@@ -126,6 +126,7 @@ class Application:
         add("GET", "/api/apps/<app_id>/builds", self.list_builds)
         add("GET", "/api/apps/<app_id>/builds/<number>", self.get_build)
         add("GET", "/api/apps/<app_id>/builds/<number>/events", self.build_events)
+        add("GET", "/api/apps/<app_id>/builds/<number>/log", self.build_log)
         add(
             "GET",
             "/api/apps/<app_id>/builds/<number>/artifacts/<name>",
@@ -312,10 +313,35 @@ class Application:
     def list_builds(self, request: Request) -> dict[str, Any]:
         app_id = request.params["app_id"]
         self.store.get(app_id)
-        builds = []
-        for number in self.store.build_numbers(app_id):
-            builds.append(self._build_json(app_id, number))
+
+        # A running build has no directory yet — the record is written when it
+        # finishes — so listing directories alone would hide the one build the
+        # user most wants to see, and a reloaded page would show nothing
+        # happening while Gradle was busy.
+        numbers = set(self.store.build_numbers(app_id))
+        running = self.builds.current
+        if running is not None and running.app_id == app_id:
+            numbers.add(running.number)
+
+        builds = [self._build_json(app_id, n) for n in sorted(numbers, reverse=True)]
         return {"builds": [b for b in builds if b]}
+
+    def build_log(self, request: Request) -> FileResponse | dict[str, Any]:
+        """The log of a build that is no longer streaming.
+
+        Reattaching to a build that finished while the browser was away needs
+        the log from somewhere, and the event stream only carries live builds.
+        """
+        app_id = request.params["app_id"]
+        number = _number(request.params["number"])
+        live = self.builds.get(app_id, number)
+        if live is not None:
+            return {"lines": list(live.lines)}
+
+        path = self.store.build_dir(app_id, number) / "log.txt"
+        if not path.is_file():
+            raise NotFoundError(f"No log was kept for build #{number}.")
+        return {"lines": path.read_text(encoding="utf-8").splitlines()}
 
     def get_build(self, request: Request) -> dict[str, Any]:
         app_id = request.params["app_id"]

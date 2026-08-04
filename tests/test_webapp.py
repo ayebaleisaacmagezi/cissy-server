@@ -14,6 +14,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from cissy.build import Build
 from cissy.webapp import Application, serve
 
 
@@ -154,6 +155,75 @@ class ApiTest(ServerTestCase):
         # Whether they are installed depends on the machine; the shape must not.
         self.assertIsInstance(body["ok"], bool)
         self.assertTrue(body["summary"])
+
+
+class RunningBuildTest(ServerTestCase):
+    """A build outlives the page that started it.
+
+    It runs in a thread on the server, so reloading or closing the tab leaves
+    it running. The API has to say so, or a reloaded page shows an idle app
+    while Gradle is busy and the only clue is Build being refused.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.request("POST", "/api/apps", {
+            "name": "Portal",
+            "website_url": "https://portal.cissytech.com",
+            "android_package_id": "com.cissytech.portal",
+        })
+        self.app = self.httpd.RequestHandlerClass.application
+
+    def fake_running(self, number: int = 1) -> None:
+        self.app.builds._current = Build(
+            number=number,
+            app_id="portal",
+            output="apk",
+            version_name="1.0.0",
+            version_code=1,
+            signed=False,
+        )
+        self.app.builds._history[("portal", number)] = self.app.builds._current
+
+    def test_a_running_build_appears_in_the_history(self):
+        # It has no directory on disk yet — the record is only written when it
+        # finishes — so listing directories alone would hide it.
+        self.fake_running()
+        status, payload = self.request("GET", "/api/apps/portal/builds")
+        self.assertEqual(status, 200)
+        self.assertEqual(
+            [(b["number"], b["status"]) for b in payload["builds"]], [(1, "running")]
+        )
+
+    def test_it_is_not_listed_under_another_app(self):
+        self.fake_running()
+        self.request("POST", "/api/apps", {
+            "name": "Other",
+            "website_url": "https://other.cissytech.com",
+            "android_package_id": "com.cissytech.other",
+        })
+        _, payload = self.request("GET", "/api/apps/other/builds")
+        self.assertEqual(payload["builds"], [])
+
+    def test_the_log_of_a_running_build_is_readable(self):
+        # This is what a reloaded page needs before the stream takes over.
+        self.fake_running()
+        self.app.builds._current.log("Running Gradle task 'assembleRelease'...")
+        status, payload = self.request("GET", "/api/apps/portal/builds/1/log")
+        self.assertEqual(status, 200)
+        self.assertIn("assembleRelease", payload["lines"][0])
+
+    def test_a_finished_build_serves_its_log_from_disk(self):
+        directory = self.app.store.build_dir("portal", 7)
+        directory.mkdir(parents=True)
+        (directory / "log.txt").write_text("line one\nline two\n", encoding="utf-8")
+        _, payload = self.request("GET", "/api/apps/portal/builds/7/log")
+        self.assertEqual(payload["lines"], ["line one", "line two"])
+
+    def test_a_build_with_no_log_says_so(self):
+        status, payload = self.request("GET", "/api/apps/portal/builds/9/log")
+        self.assertEqual(status, 404)
+        self.assertIn("No log", payload["error"])
 
 
 class StaticTest(ServerTestCase):

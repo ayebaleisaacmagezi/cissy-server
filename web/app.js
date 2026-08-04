@@ -474,6 +474,20 @@ function overviewSection(app, builds) {
   const latest = builds.find((b) => b.status === 'succeeded');
   const children = [];
 
+  // The build outlives the page, so arriving here mid-build must not look like
+  // nothing is happening.
+  const running = builds.find((b) => b.status === 'running');
+  if (running) {
+    children.push(el('div', { class: 'banner info' }, [
+      el('b', { text: `Build #${running.number} is running` }),
+      'It carries on whether or not this page is open.',
+      el('button', {
+        class: 'btn sm', style: 'margin-top:10px', text: 'Watch it',
+        onclick: () => go(`#/app/${app.id}/build/${running.number}`),
+      }),
+    ]));
+  }
+
   // The drift warning is the point of this section: without it there is no way
   // to tell whether the artifact below matches the settings above.
   if (latest && Date.parse(app.updated_at) / 1000 > latest.started_at) {
@@ -503,7 +517,14 @@ function buildRow(app, build) {
     running: ['', 'Running'],
   }[build.status] || ['', build.status];
 
-  return el('tr', {}, [
+  return el('tr', {
+    class: 'row',
+    onclick: (event) => {
+      // Let the download links do their own job.
+      if (event.target.closest('a')) return;
+      go(`#/app/${app.id}/build/${build.number}`);
+    },
+  }, [
     el('td', {}, [
       el('span', { class: 'app-name mono', text: '#' + build.number }),
       el('div', { class: 'app-url', text: `v${build.version_name} (${build.version_code})` }),
@@ -762,7 +783,7 @@ function buildDialog(app) {
         key_password: keyPassword.value,
       });
       close();
-      showBuild(app, build);
+      go(`#/app/${app.id}/build/${build.number}`);
     } catch (error) { toast(error.message, true); }
   };
 
@@ -772,86 +793,112 @@ function buildDialog(app) {
   ]);
 }
 
-function showBuild(app, build) {
+/* Reattaching matters because the build outlives the page. It runs in a thread
+ * on the server, so a reload, a closed tab or a dropped connection leaves it
+ * running — and without a URL of its own there was no way back to it. */
+async function showBuild(appId, number) {
+  const [{ app }, { build }] = await Promise.all([
+    api('GET', '/api/apps/' + appId),
+    api('GET', `/api/apps/${appId}/builds/${number}`),
+  ]);
+
+  state.app = app;
+  state.dirty = false;
+  renderSidebar();
   document.getElementById('crumb').textContent = `${app.name} — build #${build.number}`;
   clear(document.getElementById('topbar-actions')).append(
     el('button', { class: 'btn', text: 'Back to app', onclick: () => go('#/app/' + app.id) }),
   );
 
-  const status = el('span', { class: 'pill' }, [el('i', { class: 'dot' }), 'Starting…']);
-  const console = el('div', { class: 'console mono' });
+  const status = el('span', { class: 'pill' }, [el('i', { class: 'dot' }), 'Loading…']);
+  const consoleBox = el('div', { class: 'console mono' });
   const result = el('div');
 
-  const content = clear(document.getElementById('content'));
-  content.append(
+  clear(document.getElementById('content')).append(
     el('div', { style: 'display:flex;align-items:center;gap:12px;margin-bottom:14px' }, [
       el('h2', { class: 'sec', style: 'margin:0', text: 'Build #' + build.number }),
       status,
     ]),
     result,
-    console,
+    consoleBox,
   );
 
   let pinned = true;
-  console.addEventListener('scroll', () => {
+  consoleBox.addEventListener('scroll', () => {
     // Stop yanking the view back if the user has scrolled up to read something.
-    pinned = console.scrollHeight - console.scrollTop - console.clientHeight < 40;
+    pinned = consoleBox.scrollHeight - consoleBox.scrollTop - consoleBox.clientHeight < 40;
   });
 
   const append = (line) => {
-    console.append(el('div', { class: 'l ' + lineClass(line), text: line }));
-    if (pinned) console.scrollTop = console.scrollHeight;
+    consoleBox.append(el('div', { class: 'l ' + lineClass(line), text: line }));
+    if (pinned) consoleBox.scrollTop = consoleBox.scrollHeight;
   };
 
-  readEvents(`/api/apps/${app.id}/builds/${build.number}/events`, {
-    onLine: append,
-    onDone: (finished) => {
-      status.className = 'pill ' + (finished.status === 'succeeded' ? 'ok' : 'err');
-      clear(status).append(el('i', { class: 'dot' }),
-        finished.status === 'succeeded'
-          ? `Built in ${Math.round(finished.duration)}s`
-          : `Failed after ${Math.round(finished.duration)}s`);
+  if (build.status === 'running') {
+    status.className = 'pill';
+    clear(status).append(el('i', { class: 'dot' }), 'Building…');
+    // The stream replays everything already logged before going live, so a
+    // browser arriving late still sees the whole build.
+    readEvents(`/api/apps/${appId}/builds/${number}/events`, {
+      onLine: append,
+      onDone: (finished) => finishBuild(app, finished, status, result),
+    }).catch(() => {
+      status.className = 'pill err';
+      clear(status).append(el('i', { class: 'dot' }), 'Lost connection — the build carries on');
+    });
+    return;
+  }
 
-      clear(result);
-      if (finished.status === 'succeeded') {
-        result.append(
-          el('div', { class: 'banner ok' }, [
-            el('b', { text: finished.signed
-              ? 'Signed with your upload key'
-              : 'Signed with a debug key' }),
-            finished.signed
-              ? 'This artifact can be uploaded to Google Play.'
-              : 'Google Play will reject this. Good for testing on a device.',
-          ]),
-          el('div', { class: 'dl' }, (finished.artifacts || []).map((artifact) =>
-            el('a', { class: 'card', download: artifact.name,
-              href: `/api/apps/${app.id}/builds/${finished.number}/artifacts/${encodeURIComponent(artifact.name)}`,
-            }, [
-              el('div', { class: 'ttl', text: artifact.name }),
-              el('div', { class: 'meta', text: `${megabytes(artifact.size)} · ${describe(artifact.kind)}` }),
-              el('span', { class: 'btn sm primary', text: 'Download' }),
-            ]))),
-          el('div', { class: 'banner warn', style: 'margin-top:16px' }, [
-            el('b', { text: 'For iOS, take the .zip to a Mac' }),
-            'It has a complete ios/ folder with your bundle ID, name, icons and ' +
-            'permission strings set. There: flutter pub get, then flutter build ipa. ' +
-            "Apple's toolchain is macOS-only, so this is the one step the server cannot do.",
-          ]),
-        );
-      } else {
-        result.append(el('div', { class: 'banner err' }, [
-          el('b', { text: finished.hint || 'The build failed' }),
-          finished.hint ? (finished.error || '') : (finished.error || 'The log below has the details.'),
-        ]));
-      }
-    },
-  }).catch(() => {
-    status.className = 'pill err';
-    clear(status).append(el('i', { class: 'dot' }), 'Lost connection to the build');
-  });
+  // Already finished. The event stream only carries live builds, so the log
+  // comes from what was written to disk.
+  try {
+    const { lines } = await api('GET', `/api/apps/${appId}/builds/${number}/log`);
+    lines.forEach(append);
+  } catch {
+    append('The log for this build was not kept.');
+  }
+  finishBuild(app, build, status, result);
+}
 
-  status.className = 'pill';
-  clear(status).append(el('i', { class: 'dot' }), 'Building…');
+function finishBuild(app, finished, status, result) {
+  status.className = 'pill ' + (finished.status === 'succeeded' ? 'ok' : 'err');
+  clear(status).append(el('i', { class: 'dot' }),
+    finished.status === 'succeeded'
+      ? `Built in ${Math.round(finished.duration)}s`
+      : `Failed after ${Math.round(finished.duration)}s`);
+
+  clear(result);
+  if (finished.status === 'succeeded') {
+    result.append(
+      el('div', { class: 'banner ok' }, [
+        el('b', { text: finished.signed
+          ? 'Signed with your upload key'
+          : 'Signed with a debug key' }),
+        finished.signed
+          ? 'This artifact can be uploaded to Google Play.'
+          : 'Google Play will reject this. Good for testing on a device.',
+      ]),
+      el('div', { class: 'dl' }, (finished.artifacts || []).map((artifact) =>
+        el('a', { class: 'card', download: artifact.name,
+          href: `/api/apps/${app.id}/builds/${finished.number}/artifacts/${encodeURIComponent(artifact.name)}`,
+        }, [
+          el('div', { class: 'ttl', text: artifact.name }),
+          el('div', { class: 'meta', text: `${megabytes(artifact.size)} · ${describe(artifact.kind)}` }),
+          el('span', { class: 'btn sm primary', text: 'Download' }),
+        ]))),
+      el('div', { class: 'banner warn', style: 'margin-top:16px' }, [
+        el('b', { text: 'For iOS, take the .zip to a Mac' }),
+        'It has a complete ios/ folder with your bundle ID, name, icons and ' +
+        'permission strings set. There: flutter pub get, then flutter build ipa. ' +
+        "Apple's toolchain is macOS-only, so this is the one step the server cannot do.",
+      ]),
+    );
+  } else {
+    result.append(el('div', { class: 'banner err' }, [
+      el('b', { text: finished.hint || 'The build failed' }),
+      finished.hint ? (finished.error || '') : (finished.error || 'The log below has the details.'),
+    ]));
+  }
 }
 
 function lineClass(line) {
@@ -920,8 +967,13 @@ function go(hash) {
 async function route() {
   const hash = location.hash || '#/';
   try {
-    const match = hash.match(/^#\/app\/([^/]+)$/);
-    if (match) await showApp(decodeURIComponent(match[1]));
+    const build = hash.match(/^#\/app\/([^/]+)\/build\/(\d+)$/);
+    if (build) {
+      await showBuild(decodeURIComponent(build[1]), build[2]);
+      return;
+    }
+    const app = hash.match(/^#\/app\/([^/]+)$/);
+    if (app) await showApp(decodeURIComponent(app[1]));
     else await showList();
   } catch (error) {
     document.getElementById('crumb').textContent = 'Problem';
