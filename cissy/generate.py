@@ -58,6 +58,7 @@ def generate(
     _write_main_activity(directory, config)
     _patch_info_plist(directory, config, on_log)
     _remove_default_test(directory)
+    _pin_android_toolchain(directory, on_log)
 
     on_log(f"Project ready at {directory}")
     return directory
@@ -170,6 +171,89 @@ def _remove_default_test(directory: Path) -> None:
     test_dir = directory / "test"
     if test_dir.is_dir() and not any(test_dir.iterdir()):
         test_dir.rmdir()
+
+
+# ── Android toolchain pin ────────────────────────────────────────────────
+
+# The newest Android Gradle Plugin flutter_inappwebview can be built with, and
+# the Gradle release that pairs with it.
+#
+# AGP 9 turned `getDefaultProguardFile('proguard-android.txt')` from a tolerated
+# call into a hard error. flutter_inappwebview_android 1.1.3 still makes that
+# call, its stable release is 22 months old, and the fix exists only in a beta —
+# so on any Flutter new enough to scaffold AGP 9, every build fails while
+# evaluating the plugin, before compiling a line of app code.
+#
+# This exact pair is what Flutter 3.35.5 scaffolds, and it is the combination
+# that has actually produced a working release APK here. Remove the pin once the
+# plugin ships a stable release that survives AGP 9.
+PINNED_AGP = "8.9.1"
+PINNED_GRADLE = "8.12"
+
+_AGP_LINE = re.compile(
+    r'(id\("com\.android\.application"\)\s+version\s+")([^"]+)(")'
+)
+_GRADLE_DIST = re.compile(r"(distributionUrl=.*gradle-)([^-]+)(-all\.zip)")
+
+
+def _pin_android_toolchain(directory: Path, on_log: LogSink) -> None:
+    """Hold AGP at a version the WebView plugin can still be built against.
+
+    Only steps in when the scaffold asks for AGP 9 or newer. A Flutter that
+    already scaffolds AGP 8 is left exactly as it is — the narrower the
+    intervention, the less there is to undo later.
+    """
+    settings = directory / "android" / "settings.gradle.kts"
+    if not settings.is_file():
+        return
+
+    contents = settings.read_text(encoding="utf-8")
+    found = _AGP_LINE.search(contents)
+    if not found:
+        # A scaffold shaped differently to every version seen so far. Say so
+        # rather than pinning something that was not understood.
+        on_log(
+            "WARNING: could not find the Android Gradle Plugin version in "
+            "settings.gradle.kts, so it was left alone. If the build fails "
+            "while evaluating a flutter_ plugin, this is why."
+        )
+        return
+
+    current = found.group(2)
+    if _major(current) < 9:
+        return
+
+    settings.write_text(
+        _AGP_LINE.sub(rf"\g<1>{PINNED_AGP}\g<3>", contents, count=1), encoding="utf-8"
+    )
+    on_log(
+        f"Pinned the Android Gradle Plugin from {current} to {PINNED_AGP} — "
+        f"the WebView plugin cannot be built with AGP 9."
+    )
+
+    wrapper = (
+        directory / "android" / "gradle" / "wrapper" / "gradle-wrapper.properties"
+    )
+    if not wrapper.is_file():
+        return
+
+    # AGP 8.9 does not run under Gradle 9, so pinning one without the other
+    # trades this failure for a less obvious one.
+    wrapper_contents = wrapper.read_text(encoding="utf-8")
+    match = _GRADLE_DIST.search(wrapper_contents)
+    if not match or _major(match.group(2)) < 9:
+        return
+
+    wrapper.write_text(
+        _GRADLE_DIST.sub(rf"\g<1>{PINNED_GRADLE}\g<3>", wrapper_contents, count=1),
+        encoding="utf-8",
+    )
+    on_log(f"Pinned Gradle from {match.group(2)} to {PINNED_GRADLE} to match.")
+
+
+def _major(version: str) -> int:
+    head = version.split(".", 1)[0].strip()
+    return int(head) if head.isdigit() else 0
 
 
 def _copy_assets(

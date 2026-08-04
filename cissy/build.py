@@ -338,6 +338,19 @@ _RULES: list[tuple[re.Pattern[str], str]] = [
         "account running this server, not just in an interactive shell.",
     ),
     (
+        re.compile(r"getDefaultProguardFile\('proguard-android\.txt'\)", re.I),
+        "The WebView plugin is too old for the Android Gradle Plugin this "
+        "Flutter version installs. AGP 9 removed a ProGuard setting that "
+        "flutter_inappwebview 6.1.5 still uses, and the fix is only in the "
+        "6.2.0 beta. Nothing in your app configuration caused this.",
+    ),
+    (
+        re.compile(r"A problem occurred evaluating project ':flutter_", re.I),
+        "A Flutter plugin failed to configure itself for this Android Gradle "
+        "Plugin version. The plugin and the line number are named just above "
+        "this in the log — it is a toolchain mismatch, not your configuration.",
+    ),
+    (
         re.compile(r"Could not resolve|Could not GET|Connection timed out", re.I),
         "A dependency could not be downloaded. This is usually the server's "
         "network rather than anything in your configuration — try again.",
