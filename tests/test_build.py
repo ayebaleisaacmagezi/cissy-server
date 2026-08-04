@@ -10,7 +10,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from cissy.build import Build, BuildRunner, classify
+from cissy.build import Build, BuildRunner, _abi_order, classify
 from cissy.config import AppConfig
 from cissy.errors import ConflictError
 from cissy.store import ProjectStore
@@ -239,6 +239,69 @@ class UsedVersionCodesTest(unittest.TestCase):
         self.record(2, "{ this is not json")
         self.record(3, '{"version_code": 3}')
         self.assertEqual(self.store.used_version_codes(self.config.id), {1, 3})
+
+
+class BuildArgsTest(unittest.TestCase):
+    def make(self, output: str) -> Build:
+        return Build(
+            number=1,
+            app_id="portal",
+            output=output,
+            version_name="2.1.0",
+            version_code=7,
+            signed=False,
+        )
+
+    def config(self) -> AppConfig:
+        return AppConfig(
+            id="portal",
+            name="Portal",
+            website_url="https://portal.cissytech.com",
+            android_package_id="com.cissytech.portal",
+            ios_bundle_id="com.cissytech.portal",
+            version_name="2.1.0",
+            version_code=7,
+        )
+
+    def args(self, output: str) -> list[str]:
+        runner = BuildRunner.__new__(BuildRunner)
+        return runner._build_args(self.make(output), self.config())
+
+    def test_apk_builds_are_split_by_architecture(self):
+        # A universal APK is ~40 MB against ~15 MB split, and nearly all of the
+        # difference is native code for architectures the phone will not use.
+        self.assertIn("--split-per-abi", self.args("apk"))
+
+    def test_bundles_are_not_split(self):
+        # Play splits the bundle itself, and the flag is not valid here.
+        self.assertNotIn("--split-per-abi", self.args("aab"))
+
+    def test_the_version_reaches_the_build(self):
+        args = self.args("aab")
+        self.assertIn("--build-name=2.1.0", args)
+        self.assertIn("--build-number=7", args)
+
+
+class AbiOrderTest(unittest.TestCase):
+    def test_arm64_comes_first(self):
+        # It is the one to send someone who just wants to install the app;
+        # installing the wrong one fails with a message that explains nothing.
+        names = [
+            Path("app-x86_64-release.apk"),
+            Path("app-armeabi-v7a-release.apk"),
+            Path("app-arm64-v8a-release.apk"),
+        ]
+        self.assertEqual(
+            [p.name for p in sorted(names, key=_abi_order)],
+            [
+                "app-arm64-v8a-release.apk",
+                "app-armeabi-v7a-release.apk",
+                "app-x86_64-release.apk",
+            ],
+        )
+
+    def test_an_unsplit_apk_still_sorts(self):
+        self.assertEqual(_abi_order(Path("app-release.apk"))[0], 4)
 
 if __name__ == "__main__":
     unittest.main()

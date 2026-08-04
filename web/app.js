@@ -935,7 +935,7 @@ function finishBuild(app, finished, status, result) {
           href: `/api/apps/${app.id}/builds/${finished.number}/artifacts/${encodeURIComponent(artifact.name)}`,
         }, [
           el('div', { class: 'ttl', text: artifact.name }),
-          el('div', { class: 'meta', text: `${megabytes(artifact.size)} · ${describe(artifact.kind)}` }),
+          el('div', { class: 'meta', text: `${megabytes(artifact.size)} · ${describe(artifact.kind, artifact.name)}` }),
           el('span', { class: 'btn sm primary', text: 'Download' }),
         ]))),
       el('div', { class: 'banner warn', style: 'margin-top:16px' }, [
@@ -961,8 +961,16 @@ function lineClass(line) {
   return '';
 }
 
-function describe(kind) {
-  return { aab: 'for Google Play', apk: 'sideload & testing', zip: 'full Flutter project' }[kind] || kind;
+function describe(kind, name = '') {
+  if (kind === 'apk') {
+    // Split builds produce one APK per architecture, and picking the wrong one
+    // fails to install with a message that explains nothing.
+    if (name.includes('arm64-v8a')) return 'most phones — start here';
+    if (name.includes('armeabi-v7a')) return 'older 32-bit phones';
+    if (name.includes('x86_64')) return 'emulators';
+    return 'sideload & testing';
+  }
+  return { aab: 'for Google Play', zip: 'full Flutter project' }[kind] || kind;
 }
 
 /* ── destructive dialogs ─────────────────────────────────────────────── */

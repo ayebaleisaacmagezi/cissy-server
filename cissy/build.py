@@ -228,13 +228,20 @@ class BuildRunner:
 
     def _build_args(self, build: Build, config: AppConfig) -> list[str]:
         target = "appbundle" if build.output == "aab" else "apk"
-        return [
+        args = [
             "build",
             target,
             "--release",
             f"--build-name={config.version_name}",
             f"--build-number={config.version_code}",
         ]
+        if target == "apk":
+            # A universal APK carries native code for every architecture, which
+            # is most of its size — around 40 MB where a single-architecture
+            # build is nearer 15 MB. Play never sees these anyway; the bundle
+            # is what gets uploaded, and it splits by architecture on its own.
+            args.append("--split-per-abi")
+        return args
 
     def _flutter(self, build: Build, cwd: Path, args: list[str]) -> None:
         code = stream(["flutter", *args], cwd=cwd, on_line=build.log)
@@ -258,9 +265,18 @@ class BuildRunner:
             kind = "aab"
         else:
             found = sorted(
-                (project_dir / "build" / "app" / "outputs" / "flutter-apk").glob("*.apk")
+                (project_dir / "build" / "app" / "outputs" / "flutter-apk").glob("*.apk"),
+                key=_abi_order,
             )
             kind = "apk"
+
+        # The output directory survives between builds, and a change of build
+        # flags changes the filenames — so a universal app-release.apk from an
+        # earlier build would sit alongside today's split ones and be offered as
+        # if it were current. Anything older than this build is not ours.
+        fresh = [p for p in found if p.stat().st_mtime >= build.started_at]
+        if fresh:
+            found = fresh
 
         if not found:
             raise RuntimeError(
@@ -296,6 +312,18 @@ class BuildRunner:
             )
         )
         build.log(f"Saved {zip_path.name} ({_megabytes(zip_path)}) — open this on a Mac for iOS")
+
+
+# Nearly every phone in use is arm64, so it goes first — it is the one to send
+# someone who just wants to install the app.
+_ABI_PRIORITY = ("arm64-v8a", "armeabi-v7a", "x86_64", "x86")
+
+
+def _abi_order(path: Path) -> tuple[int, str]:
+    for index, abi in enumerate(_ABI_PRIORITY):
+        if abi in path.name:
+            return (index, path.name)
+    return (len(_ABI_PRIORITY), path.name)
 
 
 def _megabytes(path: Path) -> str:
