@@ -10,6 +10,16 @@ to open on a Mac, since Apple's toolchain is macOS-only.
 This is a separate product from the `webview_builder` desktop app. They share
 ideas, not code.
 
+## What works
+
+Create an app, configure it, upload an icon and a keystore, press Build, watch
+the log stream, download a signed APK or AAB — and the whole Flutter project as
+a `.zip` for the iOS half.
+
+Not yet: uploaded icons are stored but not resized into the Android mipmaps and
+the iOS appiconset, so a generated app still shows the default Flutter icon. Old
+build artifacts are never deleted.
+
 ## Requirements
 
 On the server:

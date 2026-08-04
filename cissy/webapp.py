@@ -15,16 +15,20 @@ import hmac
 import json
 import mimetypes
 import re
+import shutil
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from queue import Empty, Queue
 from typing import Any, Callable
 from urllib.parse import parse_qs, urlparse
 
+from .build import BuildRunner
 from .config import AppConfig, slugify
 from .errors import CissyError, NotFoundError, ValidationError
+from .signing import SigningCredentials
 from .store import ProjectStore
-from . import toolchain
+from . import generate, toolchain
 
 # 20 MB covers an icon, a splash and a keystore many times over, and stops a
 # stray request from filling memory.
@@ -50,6 +54,21 @@ class Request:
         if not isinstance(data, dict):
             raise ValidationError("The request body must be a JSON object.")
         return data
+
+
+@dataclass
+class FileResponse:
+    """Send a file back as a download."""
+
+    path: Path
+    filename: str
+
+
+@dataclass
+class EventStream:
+    """Stream a build's log as server-sent events."""
+
+    build: Any
 
 
 Handler = Callable[[Request], Any]
@@ -85,6 +104,7 @@ class Application:
         self.store = ProjectStore(root / "projects")
         self.web_dir = web_dir
         self.password = password
+        self.builds = BuildRunner(self.store)
         self.router = Router()
         self._register()
 
@@ -99,6 +119,18 @@ class Application:
         add("PUT", "/api/apps/<app_id>", self.update_app)
         add("DELETE", "/api/apps/<app_id>", self.delete_app)
         add("POST", "/api/apps/<app_id>/duplicate", self.duplicate_app)
+        add("PUT", "/api/apps/<app_id>/files/<slot>", self.upload_file)
+        add("DELETE", "/api/apps/<app_id>/files/<slot>", self.remove_file)
+        add("POST", "/api/apps/<app_id>/generate", self.generate_only)
+        add("POST", "/api/apps/<app_id>/build", self.start_build)
+        add("GET", "/api/apps/<app_id>/builds", self.list_builds)
+        add("GET", "/api/apps/<app_id>/builds/<number>", self.get_build)
+        add("GET", "/api/apps/<app_id>/builds/<number>/events", self.build_events)
+        add(
+            "GET",
+            "/api/apps/<app_id>/builds/<number>/artifacts/<name>",
+            self.download_artifact,
+        )
 
     def health(self, request: Request) -> dict[str, Any]:
         refresh = "refresh" in request.query
@@ -152,6 +184,173 @@ class Application:
         source = self.store.get(request.params["app_id"])
         name = str(data.get("name") or f"{source.name} copy").strip()
         return {"app": self.store.duplicate(source.id, name).to_json()}
+
+    # ── files ────────────────────────────────────────────────────────────
+
+    # Uploads arrive as raw PUT bodies. Multipart parsing is the one thing that
+    # would have justified a dependency, and this avoids it for one line of
+    # browser code.
+    _SLOTS = {
+        "icon": ({".png"}, "icon_file"),
+        "splash": ({".png", ".jpg", ".jpeg"}, "splash_file"),
+        "keystore": ({".jks", ".keystore", ".p12", ".pfx"}, "keystore_file"),
+    }
+
+    def upload_file(self, request: Request) -> dict[str, Any]:
+        app_id = request.params["app_id"]
+        slot = request.params["slot"]
+        if slot not in self._SLOTS:
+            raise NotFoundError(f'"{slot}" is not something you can upload.')
+        allowed, field = self._SLOTS[slot]
+
+        config = self.store.get(app_id)
+        supplied = (request.headers.get("X-Filename") or "").strip()
+        suffix = Path(supplied).suffix.lower()
+        if suffix not in allowed:
+            raise ValidationError(
+                f"A {slot} must be one of: {', '.join(sorted(allowed))}."
+            )
+        if not request.body:
+            raise ValidationError("The uploaded file was empty.")
+
+        # The stored name is derived, never taken from the client — a supplied
+        # name reaches the filesystem, and "../../config.json" is a valid one.
+        name = f"{slot}{suffix}"
+        assets = self.store.assets_dir(app_id)
+        assets.mkdir(parents=True, exist_ok=True)
+        for stale in assets.glob(f"{slot}.*"):
+            stale.unlink()
+        (assets / name).write_bytes(request.body)
+
+        saved = self.store.save(config.updated(**{field: name}))
+        return {"app": saved.to_json()}
+
+    def remove_file(self, request: Request) -> dict[str, Any]:
+        app_id = request.params["app_id"]
+        slot = request.params["slot"]
+        if slot not in self._SLOTS:
+            raise NotFoundError(f'"{slot}" is not something you can upload.')
+        _, field = self._SLOTS[slot]
+
+        config = self.store.get(app_id)
+        for stale in self.store.assets_dir(app_id).glob(f"{slot}.*"):
+            stale.unlink()
+
+        changes: dict[str, Any] = {field: None}
+        if slot == "keystore":
+            # An alias without a keystore would read as "signed" everywhere.
+            changes["key_alias"] = None
+        return {"app": self.store.save(config.updated(**changes)).to_json()}
+
+    # ── builds ───────────────────────────────────────────────────────────
+
+    def generate_only(self, request: Request) -> dict[str, Any]:
+        """Produce the project without building it.
+
+        Useful on its own: it is how you get the iOS project onto a Mac without
+        waiting for an Android build you do not need.
+        """
+        config = self.store.get(request.params["app_id"])
+        lines: list[str] = []
+        directory = generate.generate(config, self.store, lines.append)
+        return {"path": str(directory), "log": lines}
+
+    def start_build(self, request: Request) -> dict[str, Any]:
+        config = self.store.get(request.params["app_id"])
+        data = request.json()
+
+        output = data.get("output", "aab")
+        if output not in ("apk", "aab"):
+            raise ValidationError('Output must be "apk" or "aab".')
+
+        credentials = self._credentials(config, data)
+
+        # Bump before building so the artifact and the stored version agree, and
+        # so a second build can never reuse a version code Play has seen.
+        if data.get("bump_version", True):
+            config = self.store.save(
+                config.updated(version_code=config.next_version_code())
+            )
+
+        build = self.builds.start(config, output=output, credentials=credentials)
+        return {"build": build.to_json()}
+
+    def _credentials(
+        self, config: AppConfig, data: dict[str, Any]
+    ) -> SigningCredentials | None:
+        if not config.keystore_file or not config.key_alias:
+            return None
+        store_password = str(data.get("store_password") or "")
+        key_password = str(data.get("key_password") or "")
+        if not store_password or not key_password:
+            raise ValidationError(
+                "This app has an upload keystore, so both passwords are needed. "
+                "They are never stored, so they have to be entered for each build."
+            )
+        return SigningCredentials(
+            keystore_path=self.store.assets_dir(config.id) / config.keystore_file,
+            key_alias=config.key_alias,
+            store_password=store_password,
+            key_password=key_password,
+        )
+
+    def list_builds(self, request: Request) -> dict[str, Any]:
+        app_id = request.params["app_id"]
+        self.store.get(app_id)
+        builds = []
+        for number in self.store.build_numbers(app_id):
+            builds.append(self._build_json(app_id, number))
+        return {"builds": [b for b in builds if b]}
+
+    def get_build(self, request: Request) -> dict[str, Any]:
+        app_id = request.params["app_id"]
+        number = _number(request.params["number"])
+        found = self._build_json(app_id, number)
+        if not found:
+            raise NotFoundError(f"No build #{number} for {app_id}.")
+        return {"build": found}
+
+    def build_events(self, request: Request) -> EventStream:
+        app_id = request.params["app_id"]
+        number = _number(request.params["number"])
+        build = self.builds.get(app_id, number)
+        if build is None:
+            raise NotFoundError(
+                f"Build #{number} is not running. Its log is on the build itself."
+            )
+        return EventStream(build)
+
+    def download_artifact(self, request: Request) -> FileResponse:
+        app_id = request.params["app_id"]
+        number = _number(request.params["number"])
+        name = request.params["name"]
+
+        directory = self.store.build_dir(app_id, number)
+        path = (directory / name).resolve()
+        try:
+            path.relative_to(directory.resolve())
+        except ValueError:
+            raise ValidationError("That is not a valid artifact name.") from None
+        if not path.is_file():
+            raise NotFoundError(f"{name} is not available. It may have been cleaned up.")
+        return FileResponse(path=path, filename=name)
+
+    def _build_json(self, app_id: str, number: int) -> dict[str, Any] | None:
+        """Prefer the live build, fall back to what was written to disk.
+
+        In-memory state is lost on restart, but a finished build's record is
+        worth keeping — the history is most of the value of the overview screen.
+        """
+        live = self.builds.get(app_id, number)
+        if live is not None:
+            return live.to_json()
+        record = self.store.build_dir(app_id, number) / "build.json"
+        if not record.is_file():
+            return None
+        try:
+            return json.loads(record.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
 
     # ── dispatch ─────────────────────────────────────────────────────────
 
@@ -255,7 +454,75 @@ class RequestHandler(BaseHTTPRequestHandler):
             headers=self.headers,
         )
         result = handler(request)
+
+        if isinstance(result, FileResponse):
+            self._file(result)
+            return
+        if isinstance(result, EventStream):
+            self._events(result.build)
+            return
         self._json(200, result if result is not None else {"ok": True})
+
+    def _file(self, response: FileResponse) -> None:
+        size = response.path.stat().st_size
+        self.send_response(200)
+        self.send_header("Content-Type", "application/octet-stream")
+        self.send_header("Content-Length", str(size))
+        self.send_header(
+            "Content-Disposition", f'attachment; filename="{response.filename}"'
+        )
+        self.end_headers()
+        # Streamed in chunks: an AAB can be tens of megabytes and reading it
+        # whole would hold all of it in memory on a box that has little to spare.
+        with response.path.open("rb") as handle:
+            shutil.copyfileobj(handle, self.wfile, length=256 * 1024)
+
+    def _events(self, build: Any) -> None:
+        """Stream the build log as server-sent events.
+
+        A queue rather than writing straight from the callback: the build thread
+        must never block on a slow or vanished browser.
+        """
+        queue: "Queue[str | None]" = Queue()
+
+        def send(line: str) -> None:
+            queue.put(line)
+
+        backlog = build.subscribe(send)
+
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Connection", "close")
+        self.end_headers()
+
+        try:
+            for line in backlog:
+                self._event("line", line)
+            while True:
+                if build.status != "running" and queue.empty():
+                    break
+                try:
+                    line = queue.get(timeout=15)
+                except Empty:
+                    # A comment keeps proxies from closing an idle connection
+                    # during the long silent stretch of a Gradle build.
+                    self.wfile.write(b": keep-alive\n\n")
+                    self.wfile.flush()
+                    continue
+                if line is None:
+                    break
+                self._event("line", line)
+            self._event("done", json.dumps(build.to_json()))
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        finally:
+            build.unsubscribe(send)
+
+    def _event(self, name: str, data: str) -> None:
+        payload = "".join(f"data: {part}\n" for part in data.split("\n"))
+        self.wfile.write(f"event: {name}\n{payload}\n".encode("utf-8"))
+        self.wfile.flush()
 
     # ── responses ────────────────────────────────────────────────────────
 
@@ -275,6 +542,12 @@ class RequestHandler(BaseHTTPRequestHandler):
 def serve(app: Application, host: str, port: int) -> ThreadingHTTPServer:
     handler = type("BoundHandler", (RequestHandler,), {"application": app})
     return ThreadingHTTPServer((host, port), handler)
+
+
+def _number(value: str) -> int:
+    if not value.isdigit():
+        raise ValidationError(f'"{value}" is not a build number.')
+    return int(value)
 
 
 def _domains(url: Any) -> list[str]:

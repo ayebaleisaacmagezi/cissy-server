@@ -72,7 +72,7 @@ Two things worth remembering:
   request. Without that, a stale browser tab could move an app on top of
   another one.
 
-## Phase 3 — Generate — **next**
+## Phase 3 — Generate — **done**
 
 `flutter create --platforms=android,ios`, then overwrite `lib/main.dart`,
 `pubspec.yaml`, `AndroidManifest.xml` and `Info.plist` from the config.
@@ -86,7 +86,22 @@ Keep the scaffold between builds. Regenerating it every time costs minutes.
 
 **Done when:** a generated project builds by hand with `flutter build apk` over SSH.
 
-## Phase 4 — Build and stream
+Built. Verified the way that actually proves something: generate a real project
+and run `flutter analyze` on it, for a fully-featured config and a bare one.
+Both report **No issues found**.
+
+That caught two things no string assertion would have. `flutter create` writes a
+placeholder widget test referencing `MyApp`, which is a hard analyzer error in a
+project whose app class is named something else — so a clean checkout would fail
+`flutter analyze` and `flutter test` for whoever opened it on a Mac. And sharing
+touched `context` after an await, which trips `use_build_context_synchronously`.
+
+Feature flags emit or omit whole blocks, so anything referenced by an emitted
+block must itself be emitted. `_load` is the example: it is only reachable from
+deep links or the retry buttons, and emitting it otherwise leaves dead code that
+fails the generated project's own lints.
+
+## Phase 4 — Build and stream — **done**
 
 `POST /api/apps/<id>/build` starts a build, returns an id.
 `GET /api/builds/<id>/events` streams stdout over SSE.
@@ -103,7 +118,17 @@ show the log unchanged rather than a wrong guess.
 
 **Done when:** pressing Build in a browser produces an APK, with live logs.
 
-## Phase 5 — Signing and artifacts
+Built and confirmed with a real build: **40.9 MB APK in 448 seconds** on this
+Windows machine.
+
+Logs stream as server-sent events, read in the browser with `fetch` rather than
+`EventSource` — `EventSource` cannot send headers, which would mean putting the
+password in a query string where it lands in proxy logs and browser history.
+
+Subscribers get the backlog and live lines with no gap and no duplicate, and a
+browser that navigates away mid-build cannot take the build with it.
+
+## Phase 5 — Signing and artifacts — **done**
 
 Keystore upload, `key.properties` written before the build and deleted after,
 release signing config patched into `build.gradle.kts`.
@@ -116,7 +141,17 @@ two would put signing passwords in a Downloads folder in plaintext.
 
 **Done when:** a signed AAB uploads to Play, and the zip opens and builds on a Mac.
 
-## Phase 6 — UI
+Built. The Gradle patch is tolerant of template changes between Flutter
+versions: it replaces the debug signing line if present, otherwise adds a
+signing config to the release build type directly, and raises if it recognises
+neither — quietly producing a debug-signed artifact that looks like a release
+one is the worst available outcome.
+
+The archive was verified by downloading and opening it: 80 entries, a complete
+`ios/` folder carrying the right bundle id and display name, and no
+`key.properties`, keystore, `build/` or `.dart_tool/`.
+
+## Phase 6 — UI — **done**
 
 The six screens from the mockup: app list, configure, building, download,
 overview, rebuild. Plain HTML/CSS/JS, no build step. Sidebar navigates, page
@@ -131,6 +166,11 @@ Two behaviours that matter more than they look:
 
 **Done when:** the whole flow works without touching a terminal.
 
+Built. Both behaviours landed: the drift warning compares the config's
+`updated_at` against the last successful build's start time, and the version
+code is bumped before the build so the artifact and the stored version can never
+disagree.
+
 ---
 
 ## Deferred
@@ -143,7 +183,9 @@ Two behaviours that matter more than they look:
 
 ## Open
 
-- Backend framework: FastAPI (SSE and uploads are cleaner) versus stdlib
-  `http.server` (zero dependencies). FastAPI unless the dependency is unwelcome.
 - Whether Preview, Manifest and Diagnostics from the desktop app belong in the
   sidebar here.
+- Artifact retention. Nothing deletes old builds yet. 80 GB makes it tidiness
+  rather than survival, but a 40 MB APK per build adds up.
+- Icons are uploaded and stored but not yet resized into the Android mipmaps and
+  the iOS appiconset, so the generated app still shows the default Flutter icon.

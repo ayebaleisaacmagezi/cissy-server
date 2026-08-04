@@ -1,0 +1,253 @@
+"""Turning a config into a Flutter project on disk.
+
+`flutter create` lays down the scaffold, then the files that carry the app's
+identity are overwritten from the config. The scaffold is kept between builds:
+recreating it costs minutes and it does not change unless the package id or
+project name does.
+
+Nothing here builds anything — that is `build.py`. Splitting them means the
+generated project can be inspected, downloaded, or built by hand over SSH
+without running a build first.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import shutil
+from pathlib import Path
+
+from . import template
+from .config import AppConfig
+from .errors import CissyError
+from .process import LogSink, stream
+from .store import ProjectStore
+
+STATE_FILE = ".cissy-scaffold.json"
+
+
+def generate(
+    config: AppConfig,
+    store: ProjectStore,
+    on_log: LogSink,
+) -> Path:
+    """Produce a complete Flutter project and return its directory."""
+    directory = store.generated_dir(config.id)
+    directory.parent.mkdir(parents=True, exist_ok=True)
+
+    name = template.project_name(config)
+    org = template.organisation(config)
+
+    if _needs_scaffold(directory, name, org):
+        on_log("Creating the Flutter project scaffold...")
+        _create_scaffold(directory, name=name, org=org, on_log=on_log)
+        _write_state(directory, name=name, org=org)
+    else:
+        on_log("Reusing the existing project scaffold.")
+
+    on_log("Writing the app source...")
+    splash_asset = _copy_assets(config, store, directory)
+
+    _write(directory / "pubspec.yaml", template.pubspec(config, splash_asset))
+    _write(directory / "lib" / "main.dart", template.main_dart(config, splash_asset))
+    _write(
+        directory / "android" / "app" / "src" / "main" / "AndroidManifest.xml",
+        template.android_manifest(config),
+    )
+    _write(directory / "android" / "gradle.properties", template.gradle_properties())
+    _write_main_activity(directory, config)
+    _patch_info_plist(directory, config, on_log)
+    _remove_default_test(directory)
+
+    on_log(f"Project ready at {directory}")
+    return directory
+
+
+# ── scaffold ─────────────────────────────────────────────────────────────
+
+
+def _needs_scaffold(directory: Path, name: str, org: str) -> bool:
+    """Whether `flutter create` has to run again.
+
+    Only the identity matters. Everything else this server writes is overwritten
+    on every generate, so a stale scaffold cannot survive a change to it.
+    """
+    if not (directory / "pubspec.yaml").is_file():
+        return True
+    state_path = directory / STATE_FILE
+    if not state_path.is_file():
+        return True
+    try:
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return True
+    return state.get("name") != name or state.get("org") != org
+
+
+def _create_scaffold(directory: Path, *, name: str, org: str, on_log: LogSink) -> None:
+    # --overwrite because a half-finished scaffold from a killed build would
+    # otherwise make every later attempt fail the same way.
+    exit_code = stream(
+        [
+            "flutter",
+            "create",
+            "--overwrite",
+            "--no-pub",
+            "--platforms=android,ios",
+            "--org",
+            org,
+            "--project-name",
+            name,
+            str(directory),
+        ],
+        on_line=on_log,
+    )
+    if exit_code != 0:
+        raise CissyError(
+            "Could not create the Flutter project. The log above has the "
+            "details from Flutter itself."
+        )
+
+
+def _write_state(directory: Path, *, name: str, org: str) -> None:
+    (directory / STATE_FILE).write_text(
+        json.dumps({"name": name, "org": org}, indent=2) + "\n", encoding="utf-8"
+    )
+
+
+# ── files ────────────────────────────────────────────────────────────────
+
+
+def _write(path: Path, contents: str) -> None:
+    """Write only when the content differs.
+
+    Gradle and the Dart compiler both key off modification times, so rewriting
+    identical files would discard incremental state and slow every build.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.is_file() and path.read_text(encoding="utf-8") == contents:
+        return
+    path.write_text(contents, encoding="utf-8", newline="\n")
+
+
+def _write_main_activity(directory: Path, config: AppConfig) -> None:
+    """Place MainActivity at the path its package declaration claims.
+
+    `flutter create` puts it under the org it was given. If the package id later
+    changes, the old file is left behind declaring the wrong package, and the
+    build fails with a message that does not mention any of this.
+    """
+    kotlin_root = directory / "android" / "app" / "src" / "main" / "kotlin"
+    target = kotlin_root.joinpath(*config.android_package_id.split(".")) / "MainActivity.kt"
+
+    for stale in kotlin_root.rglob("MainActivity.kt"):
+        if stale != target:
+            stale.unlink()
+
+    _write(target, template.main_activity(config))
+
+    # Leave no empty package directories behind; Gradle ignores them but they
+    # make the generated project confusing to read.
+    for path in sorted(kotlin_root.rglob("*"), reverse=True):
+        if path.is_dir() and not any(path.iterdir()):
+            path.rmdir()
+
+
+def _remove_default_test(directory: Path) -> None:
+    """Delete the scaffold's placeholder widget test.
+
+    `flutter create` writes a test that references `MyApp`, which this app does
+    not have. Left in place it is a hard analyzer error, so the generated
+    project fails `flutter analyze` and `flutter test` on a clean checkout —
+    the first thing anyone opening it on a Mac would hit.
+
+    Not replaced with a working test: pumping the widget tree would instantiate
+    the platform WebView, which has no implementation in the test environment.
+    """
+    default_test = directory / "test" / "widget_test.dart"
+    if default_test.is_file():
+        default_test.unlink()
+    test_dir = directory / "test"
+    if test_dir.is_dir() and not any(test_dir.iterdir()):
+        test_dir.rmdir()
+
+
+def _copy_assets(
+    config: AppConfig, store: ProjectStore, directory: Path
+) -> str | None:
+    """Copy the splash image in, and return its pubspec asset path."""
+    if not config.splash_file:
+        return None
+    source = store.assets_dir(config.id) / config.splash_file
+    if not source.is_file():
+        return None
+    target = directory / "assets" / config.splash_file
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, target)
+    return f"assets/{config.splash_file}"
+
+
+# ── Info.plist ───────────────────────────────────────────────────────────
+
+
+def _patch_info_plist(directory: Path, config: AppConfig, on_log: LogSink) -> None:
+    path = directory / "ios" / "Runner" / "Info.plist"
+    if not path.is_file():
+        on_log("No iOS project found; skipping Info.plist.")
+        return
+
+    contents = path.read_text(encoding="utf-8")
+    contents = _set_plist_string(contents, "CFBundleDisplayName", config.display_name)
+    contents = _set_plist_string(contents, "CFBundleName", template.project_name(config))
+
+    for key, value in template.ios_usage_descriptions(config).items():
+        contents = _set_plist_string(contents, key, value)
+
+    if "Deep links" in set(config.features):
+        contents = _add_url_scheme(contents, template.deep_link_scheme(config))
+
+    _write(path, contents)
+
+
+def _set_plist_string(contents: str, key: str, value: str) -> str:
+    """Set a string entry, replacing an existing one or appending a new one.
+
+    Text manipulation rather than plistlib because the file is a template full
+    of `$(PRODUCT_NAME)` placeholders that a parse-and-rewrite would reformat,
+    turning every generated diff into noise.
+    """
+    escaped = (
+        value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    )
+    pattern = re.compile(
+        r"(<key>" + re.escape(key) + r"</key>\s*<string>)(.*?)(</string>)",
+        re.DOTALL,
+    )
+    if pattern.search(contents):
+        return pattern.sub(lambda m: m.group(1) + escaped + m.group(3), contents, count=1)
+
+    entry = f"\t<key>{key}</key>\n\t<string>{escaped}</string>\n"
+    marker = "</dict>\n</plist>"
+    if marker not in contents:
+        raise CissyError("The iOS Info.plist is not in the expected format.")
+    return contents.replace(marker, entry + marker, 1)
+
+
+def _add_url_scheme(contents: str, scheme: str) -> str:
+    if "<key>CFBundleURLTypes</key>" in contents:
+        return contents
+    entry = (
+        "\t<key>CFBundleURLTypes</key>\n"
+        "\t<array>\n"
+        "\t\t<dict>\n"
+        "\t\t\t<key>CFBundleTypeRole</key>\n"
+        "\t\t\t<string>Editor</string>\n"
+        "\t\t\t<key>CFBundleURLSchemes</key>\n"
+        "\t\t\t<array>\n"
+        f"\t\t\t\t<string>{scheme}</string>\n"
+        "\t\t\t</array>\n"
+        "\t\t</dict>\n"
+        "\t</array>\n"
+    )
+    marker = "</dict>\n</plist>"
+    return contents.replace(marker, entry + marker, 1)

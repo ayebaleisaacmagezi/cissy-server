@@ -243,6 +243,40 @@ aside.summary h4 {
 #toast.bad { background: var(--err-ink); }
 #toast[hidden] { display: none; }
 
+/* ── upload slots ── */
+.drop {
+  border: 1.5px dashed var(--soft); border-radius: var(--radius);
+  padding: 18px; text-align: center; background: rgba(214, 247, 255, 0.35);
+  font-size: 12.5px; color: var(--ink-2);
+}
+.drop.filled { border-style: solid; border-color: var(--line); background: var(--surface); }
+.drop b { display: block; color: var(--ink); font-size: 13.5px; margin-bottom: 3px; word-break: break-all; }
+.drop .btn { margin: 10px 4px 0; }
+
+/* ── build console ── */
+.console {
+  background: var(--console, #0e1a20); color: #c4d6de;
+  border-radius: var(--radius); padding: 14px 16px;
+  font-size: 12px; line-height: 1.7;
+  max-height: 460px; overflow-y: auto; overflow-x: hidden;
+}
+.console .l { white-space: pre-wrap; word-break: break-word; }
+.console .g { color: #6fe3a0; }
+.console .y { color: #f5ce7a; }
+.console .r { color: #ff8d95; }
+.console .w { color: #fff; }
+
+/* ── artifact cards ── */
+.dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.card {
+  border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 15px; background: var(--surface);
+  text-decoration: none; color: inherit; display: block;
+}
+.card:hover { border-color: var(--accent); }
+.card .ttl { font-weight: 600; font-size: 13.5px; margin-bottom: 3px; word-break: break-all; }
+.card .meta { font-size: 11.5px; color: var(--ink-3); margin-bottom: 12px; }
+
 @media (max-width: 860px) {
   .shell { grid-template-columns: 1fr; }
   .sidebar { position: static; height: auto; }

@@ -33,6 +33,14 @@ FEATURES = (
 
 EXTERNAL_LINK_BEHAVIOURS = ("browser", "webview", "block")
 
+# Written into Info.plist. Vague reasons are a common App Store rejection, so
+# these name the app and say what the permission is actually for.
+DEFAULT_PERMISSION_REASONS = {
+    "camera": "{app} uses the camera so you can take and upload photos.",
+    "photos": "{app} needs access to your photos so you can upload them.",
+    "location": "{app} uses your location to show information relevant to where you are.",
+}
+
 # Two or more dot-separated segments, each starting with a letter. Matches what
 # both Gradle and the Play console will accept.
 _PACKAGE_RE = re.compile(r"^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$")
@@ -77,8 +85,18 @@ class AppConfig:
     splash_file: str | None = None
     keystore_file: str | None = None
     key_alias: str | None = None
+    # Why the app wants each permission, shown by iOS in the system prompt.
+    # Apple rejects builds that request a permission without one.
+    permission_descriptions: dict[str, str] = field(default_factory=dict)
     created_at: str = field(default_factory=utc_now)
     updated_at: str = field(default_factory=utc_now)
+
+    def permission_description(self, key: str) -> str:
+        """The stored reason, or a truthful default naming the app."""
+        stored = (self.permission_descriptions or {}).get(key, "").strip()
+        if stored:
+            return stored
+        return DEFAULT_PERMISSION_REASONS[key].format(app=self.display_name)
 
     @property
     def display_name(self) -> str:
@@ -123,6 +141,7 @@ class AppConfig:
             # Note the absence of any password field. See the module docstring.
             "keystore_file": self.keystore_file,
             "key_alias": self.key_alias,
+            "permission_descriptions": dict(self.permission_descriptions or {}),
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }
@@ -157,6 +176,7 @@ class AppConfig:
             splash_file=_optional_text(data, "splash_file"),
             keystore_file=_optional_text(data, "keystore_file"),
             key_alias=_optional_text(data, "key_alias"),
+            permission_descriptions=_str_map(data, "permission_descriptions"),
             created_at=_text(data, "created_at") or utc_now(),
             updated_at=_text(data, "updated_at") or utc_now(),
         )
@@ -293,6 +313,17 @@ def _positive_int(data: dict[str, Any], key: str, default: int) -> int:
     if isinstance(value, int) and not isinstance(value, bool) and value >= 1:
         return value
     return default
+
+
+def _str_map(data: dict[str, Any], key: str) -> dict[str, str]:
+    value = data.get(key)
+    if not isinstance(value, dict):
+        return {}
+    return {
+        str(k): v.strip()
+        for k, v in value.items()
+        if isinstance(v, str) and v.strip()
+    }
 
 
 def _str_list(data: dict[str, Any], key: str) -> list[str]:
