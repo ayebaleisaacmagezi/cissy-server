@@ -837,15 +837,32 @@ async function showBuild(appId, number) {
   if (build.status === 'running') {
     status.className = 'pill';
     clear(status).append(el('i', { class: 'dot' }), 'Building…');
+
+    let delivered = 0;
+    let polling = false;
+
     // The stream replays everything already logged before going live, so a
     // browser arriving late still sees the whole build.
     readEvents(`/api/apps/${appId}/builds/${number}/events`, {
-      onLine: append,
-      onDone: (finished) => finishBuild(app, finished, status, result),
+      onLine: (line) => { if (!polling) { delivered += 1; append(line); } },
+      onDone: (finished) => { if (!polling) finishBuild(app, finished, status, result); },
     }).catch(() => {
-      status.className = 'pill err';
-      clear(status).append(el('i', { class: 'dot' }), 'Lost connection — the build carries on');
+      if (!polling) {
+        status.className = 'pill err';
+        clear(status).append(el('i', { class: 'dot' }), 'Lost connection — the build carries on');
+      }
     });
+
+    // Streaming has more places to go wrong than the rest of this put
+    // together — a proxy that buffers, a browser that waits for a full buffer
+    // before releasing the first byte. Rather than depend on all of them
+    // behaving, fall back to asking for the log outright. Slower, but it
+    // cannot silently show an empty console while a build is running.
+    setTimeout(() => {
+      if (delivered > 0 || polling) return;
+      polling = true;
+      pollBuildLog(app, number, { status, result, consoleBox, append });
+    }, 5000);
     return;
   }
 
@@ -858,6 +875,32 @@ async function showBuild(appId, number) {
     append('The log for this build was not kept.');
   }
   finishBuild(app, build, status, result);
+}
+
+/* Fallback for when the event stream delivers nothing: ask for the log on a
+ * timer instead. Only reached if five seconds pass with no line at all. */
+async function pollBuildLog(app, number, { status, result, consoleBox, append }) {
+  clear(consoleBox);
+  let shown = 0;
+
+  while (true) {
+    try {
+      const { lines } = await api('GET', `/api/apps/${app.id}/builds/${number}/log`);
+      for (let i = shown; i < lines.length; i += 1) append(lines[i]);
+      shown = lines.length;
+
+      const { build } = await api('GET', `/api/apps/${app.id}/builds/${number}`);
+      if (build.status !== 'running') {
+        finishBuild(app, build, status, result);
+        return;
+      }
+    } catch (error) {
+      status.className = 'pill err';
+      clear(status).append(el('i', { class: 'dot' }), 'Lost track of the build');
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
 }
 
 function finishBuild(app, finished, status, result) {

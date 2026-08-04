@@ -532,12 +532,24 @@ class RequestHandler(BaseHTTPRequestHandler):
         backlog = build.subscribe(send)
 
         self.send_response(200)
-        self.send_header("Content-Type", "text/event-stream")
+        # charset matters: without it the browser sniffs the encoding, and
+        # sniffing means holding roughly the first kilobyte back before any of
+        # it reaches the page. A build that has only logged a few lines would
+        # show an empty console until Gradle got noisy.
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
         self.send_header("Cache-Control", "no-store")
+        # Tells nginx not to buffer, if one is ever put in front of this. It is
+        # ignored by everything else.
+        self.send_header("X-Accel-Buffering", "no")
         self.send_header("Connection", "close")
         self.end_headers()
 
         try:
+            # Padding for anything that still insists on a full buffer before
+            # releasing the first byte. Sent as a comment, which every SSE
+            # reader discards.
+            self.wfile.write(b": " + b" " * 2048 + b"\n\n")
+            self.wfile.flush()
             for line in backlog:
                 self._event("line", line)
             while True:
