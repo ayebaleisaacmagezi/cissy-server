@@ -47,8 +47,9 @@ def generate(
 
     on_log("Writing the app source...")
     splash_asset = _copy_assets(config, store, directory)
+    icon_asset = _copy_icon(config, store, directory)
 
-    _write(directory / "pubspec.yaml", template.pubspec(config, splash_asset))
+    _write(directory / "pubspec.yaml", template.pubspec(config, splash_asset, icon_asset))
     _write(directory / "lib" / "main.dart", template.main_dart(config, splash_asset))
     _write(
         directory / "android" / "app" / "src" / "main" / "AndroidManifest.xml",
@@ -269,6 +270,25 @@ def _copy_assets(
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source, target)
     return f"assets/{config.splash_file}"
+
+
+def _copy_icon(config: AppConfig, store: ProjectStore, directory: Path) -> str | None:
+    """Copy the launcher icon in, and return its pubspec path.
+
+    Only copied here — turning it into the dozens of sizes Android and iOS
+    actually read is left to flutter_launcher_icons at build time, because
+    doing it here would mean an image library and this server has no
+    dependencies to spend.
+    """
+    if not config.icon_file:
+        return None
+    source = store.assets_dir(config.id) / config.icon_file
+    if not source.is_file():
+        return None
+    target = directory / "assets" / "icon" / config.icon_file
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, target)
+    return f"assets/icon/{config.icon_file}"
 
 
 # ── Info.plist ───────────────────────────────────────────────────────────

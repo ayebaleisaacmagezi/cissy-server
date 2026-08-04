@@ -183,6 +183,8 @@ class BuildRunner:
             build.log("$ flutter pub get")
             self._flutter(build, project_dir, ["pub", "get"])
 
+            self._generate_icons(build, config, project_dir)
+
             args = self._build_args(build, config)
             build.log("$ flutter " + " ".join(args))
             self._flutter(build, project_dir, args)
@@ -242,6 +244,34 @@ class BuildRunner:
             # is what gets uploaded, and it splits by architecture on its own.
             args.append("--split-per-abi")
         return args
+
+    def _generate_icons(self, build: Build, config: AppConfig, cwd: Path) -> None:
+        """Turn the uploaded icon into the sizes Android and iOS actually read.
+
+        Deliberately not fatal. An app whose icon failed to generate is still a
+        working app, and failing an otherwise good build over it would be worse
+        than shipping the default icon — but it is said loudly, because a
+        silently ignored icon is exactly the complaint this was written to fix.
+        """
+        if not config.icon_file:
+            return
+
+        build.log("$ dart run flutter_launcher_icons")
+        try:
+            code = stream(["dart", "run", "flutter_launcher_icons"], cwd=cwd, on_line=build.log)
+        except Exception as error:  # noqa: BLE001 - never sink a whole build
+            build.log(f"WARNING: could not run flutter_launcher_icons ({error}).")
+            build.log("WARNING: the app will be built with the default Flutter icon.")
+            return
+
+        if code != 0:
+            build.log(
+                "WARNING: icon generation failed, so this build keeps the "
+                "default Flutter icon. A PNG at least 512x512 with no "
+                "transparency is the usual fix."
+            )
+        else:
+            build.log("Launcher icons generated for Android and iOS.")
 
     def _flutter(self, build: Build, cwd: Path, args: list[str]) -> None:
         code = stream(["flutter", *args], cwd=cwd, on_line=build.log)

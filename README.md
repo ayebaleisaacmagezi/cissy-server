@@ -16,9 +16,8 @@ Create an app, configure it, upload an icon and a keystore, press Build, watch
 the log stream, download a signed APK or AAB — and the whole Flutter project as
 a `.zip` for the iOS half.
 
-Not yet: uploaded icons are stored but not resized into the Android mipmaps and
-the iOS appiconset, so a generated app still shows the default Flutter icon. Old
-build artifacts are never deleted.
+Not yet: the splash image is stored but not applied, and old build artifacts
+are never deleted.
 
 ## Requirements
 

@@ -33,6 +33,7 @@ DEPENDENCIES = {
     "path_provider": "^2.1.5",
     "open_filex": "^4.7.0",
     "app_links": "^6.4.1",
+    "flutter_launcher_icons": "^0.14.4",
 }
 
 
@@ -81,7 +82,11 @@ def organisation(config: AppConfig) -> str:
 # ── pubspec ──────────────────────────────────────────────────────────────
 
 
-def pubspec(config: AppConfig, splash_asset: str | None = None) -> str:
+def pubspec(
+    config: AppConfig,
+    splash_asset: str | None = None,
+    icon_asset: str | None = None,
+) -> str:
     features = set(config.features)
     lines = [
         f"name: {project_name(config)}",
@@ -114,12 +119,35 @@ def pubspec(config: AppConfig, splash_asset: str | None = None) -> str:
         "  flutter_test:",
         "    sdk: flutter",
         "  flutter_lints: ^5.0.0",
+    ]
+    if icon_asset:
+        lines.append(f"  flutter_launcher_icons: {DEPENDENCIES['flutter_launcher_icons']}")
+
+    lines += [
         "",
         "flutter:",
         "  uses-material-design: true",
     ]
     if splash_asset:
         lines += ["  assets:", f"    - {splash_asset}"]
+
+    if icon_asset:
+        # Android reads the launcher icon from five mipmap densities and iOS
+        # from about fifteen sizes in an appiconset. Generating those needs an
+        # image library, which this server does not have — so the sizes are
+        # produced by flutter_launcher_icons on the build machine instead,
+        # where the Dart toolchain already is.
+        lines += [
+            "",
+            "flutter_launcher_icons:",
+            "  android: true",
+            "  ios: true",
+            f"  image_path: {icon_asset}",
+            "  min_sdk_android: 21",
+            # iOS rejects an icon with an alpha channel, and a logo exported
+            # with a transparent background is the normal case.
+            "  remove_alpha_ios: true",
+        ]
     return "\n".join(lines) + "\n"
 
 

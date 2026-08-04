@@ -267,3 +267,39 @@ class GradlePropertiesTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LauncherIconTest(unittest.TestCase):
+    """Icons were uploaded and stored but never reached the built app.
+
+    Android reads the launcher icon from five mipmap densities and iOS from
+    about fifteen sizes in an appiconset. Nothing produced those, so every
+    generated app shipped with the default Flutter icon.
+    """
+
+    def test_no_icon_means_no_config_block(self):
+        pubspec = template.pubspec(make(), None, None)
+        self.assertNotIn("flutter_launcher_icons", pubspec)
+
+    def test_an_icon_adds_the_tool_and_its_config(self):
+        pubspec = template.pubspec(make(), None, "assets/icon/icon.png")
+        self.assertIn("flutter_launcher_icons: ^0.14.4", pubspec)
+        self.assertIn("\nflutter_launcher_icons:\n", pubspec)
+        self.assertIn("image_path: assets/icon/icon.png", pubspec)
+
+    def test_it_strips_alpha_for_ios(self):
+        # iOS rejects an icon with an alpha channel, and a logo exported with a
+        # transparent background is the normal case.
+        self.assertIn("remove_alpha_ios: true", template.pubspec(make(), None, "a.png"))
+
+    def test_the_tool_is_a_dev_dependency(self):
+        # It runs at build time and must not ship inside the app.
+        pubspec = template.pubspec(make(), None, "a.png")
+        dev_block = pubspec.split("dev_dependencies:")[1].split("\nflutter:")[0]
+        self.assertIn("flutter_launcher_icons", dev_block)
+
+    def test_the_splash_asset_is_unaffected(self):
+        pubspec = template.pubspec(make(), "assets/splash.png", "assets/icon/icon.png")
+        self.assertIn("  assets:", pubspec)
+        self.assertIn("    - assets/splash.png", pubspec)
+        self.assertIn("image_path: assets/icon/icon.png", pubspec)
