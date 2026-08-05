@@ -242,14 +242,19 @@ const SECTIONS = [
 function renderSidebar() {
   const nav = clear(document.getElementById('side-nav'));
 
+  const onBilling = location.hash.startsWith('#/billing');
+
   if (!state.app) {
     nav.append(el('div', { class: 'nav-group' }, [
-      el('button', { class: 'nav-item active', onclick: () => go('#/') }, [
+      el('button', { class: 'nav-item' + (onBilling ? '' : ' active'), onclick: () => go('#/') }, [
         el('span', { class: 'gl', text: '▦' }), 'All apps',
         el('span', { class: 'badge', text: String(state.apps.length) }),
       ]),
       el('button', { class: 'nav-item', onclick: newAppDialog }, [
         el('span', { class: 'gl', text: '＋' }), 'New app',
+      ]),
+      el('button', { class: 'nav-item' + (onBilling ? ' active' : ''), onclick: () => go('#/billing') }, [
+        el('span', { class: 'gl', text: '₵' }), 'Billing',
       ]),
     ]));
     return;
@@ -1017,6 +1022,272 @@ function deleteDialog(app) {
     ]);
 }
 
+/* ── billing ─────────────────────────────────────────────────────────────
+ *
+ * Collecto has no webhook, so nothing here is push. The customer approves on
+ * their handset and the server finds out by asking. This page therefore only
+ * ever reads: it polls a record the server owns, and the payment would finish
+ * exactly the same way with this tab closed. That is the property worth
+ * noticing while watching it.
+ */
+
+let billingTimer = null;
+
+function stopBillingPoll() {
+  if (billingTimer) clearInterval(billingTimer);
+  billingTimer = null;
+}
+
+async function showBilling() {
+  state.app = null;
+  const data = await api('GET', '/api/billing');
+
+  document.getElementById('crumb').textContent = 'Billing';
+  clear(document.getElementById('topbar-actions'));
+  renderSidebar();
+  const content = clear(document.getElementById('content'));
+
+  content.append(el('h2', { class: 'sec', text: 'Plan and payments' }));
+
+  if (data.mode === 'demo') {
+    content.append(el('div', { class: 'banner warn' }, [
+      el('b', { text: 'Demo mode — no money moves' }),
+      'There is no Collecto account configured, so payments run against a ' +
+      'simulator that answers like the real one: it can approve, decline, stall, ' +
+      'drop a connection or return rubbish. Set CISSY_COLLECTO_USERNAME and ' +
+      'CISSY_COLLECTO_KEY to go live.',
+    ]));
+  }
+
+  content.append(subscriptionCard(data.subscription));
+
+  content.append(
+    el('h2', { class: 'sec', text: 'Plans' }),
+    el('div', { class: 'plans' }, data.plans.map((plan) =>
+      el('div', { class: 'plan' }, [
+        el('div', { class: 'plan-name', text: plan.name }),
+        el('div', { class: 'plan-price', text: money(plan.amount) }),
+        el('div', { class: 'plan-blurb', text: plan.blurb + ' · per month' }),
+        el('button', {
+          class: 'btn primary full',
+          text: 'Pay with mobile money',
+          onclick: () => payDialog(plan, data.mode),
+        }),
+      ]))),
+  );
+
+  if (data.payments.length) {
+    content.append(
+      el('h2', { class: 'sec', text: 'Payments' }),
+      el('table', { class: 'apps' }, [
+        el('thead', {}, [el('tr', {},
+          ['Reference', 'Plan', 'Amount', 'When', 'Status'].map((h) => el('th', { text: h })))]),
+        el('tbody', {}, data.payments.map((payment) =>
+          el('tr', { class: 'row', onclick: () => go('#/billing/pay/' + payment.reference) }, [
+            el('td', { class: 'app-url mono', text: payment.reference }),
+            el('td', { text: payment.plan }),
+            el('td', { text: money(payment.amount) }),
+            el('td', { class: 'app-url', text: shortDate(payment.created_at) }),
+            el('td', {}, [paymentPill(payment.status)]),
+          ]))),
+      ]),
+    );
+  }
+}
+
+function subscriptionCard(subscription) {
+  if (!subscription || !subscription.active) {
+    return el('div', { class: 'banner info' }, [
+      el('b', { text: 'No plan yet' }),
+      'Builds are unmetered while this is being built. A plan is what will ' +
+      'carry the build allowance once accounts exist.',
+    ]);
+  }
+  return el('div', { class: 'banner ok' }, [
+    el('b', { text: `${subscription.plan_name} — active` }),
+    `${subscription.builds} builds a month, until ${shortDate(subscription.until)}. ` +
+    `Paid under ${subscription.reference}.`,
+  ]);
+}
+
+function paymentPill(status) {
+  const look = { successful: 'ok', failed: 'err', abandoned: 'warn' }[status] || 'warn';
+  const label = { successful: 'Paid', failed: 'Failed', abandoned: 'Not approved' }[status]
+    || 'Waiting';
+  return el('span', { class: 'pill ' + look }, [el('i', { class: 'dot' }), label]);
+}
+
+function payDialog(plan, mode) {
+  const phone = el('input', { class: 'input mono', placeholder: '0772 000 000' });
+  const scenario = el('select', { class: 'input' }, [
+    el('option', { value: 'approve', text: 'They approve it' }),
+    el('option', { value: 'decline', text: 'They decline it' }),
+    el('option', { value: 'silent', text: 'They never touch the prompt' }),
+    el('option', { value: 'flaky', text: 'The connection drops once' }),
+    el('option', { value: 'garbage', text: 'Collecto returns something that is not JSON' }),
+  ]);
+
+  const submit = async () => {
+    try {
+      const body = { plan: plan.id, phone: phone.value };
+      if (mode === 'demo') body.scenario = scenario.value;
+      const { payment } = await api('POST', '/api/billing/pay', body);
+      close();
+      go('#/billing/pay/' + payment.reference);
+    } catch (error) {
+      toast(error.message, true);
+    }
+  };
+
+  const close = openModal(
+    `${plan.name} — ${money(plan.amount)}`,
+    'You will get a prompt on your phone. Your PIN is entered there, never here.',
+    [
+      field('Mobile money number', phone, 'The number that will be charged.'),
+      mode === 'demo'
+        ? field('Demo: what the handset does', scenario,
+            'Only in demo mode. The unhappy paths are the ones worth watching.')
+        : null,
+    ].filter(Boolean),
+    [
+      el('button', { class: 'btn ghost', text: 'Cancel', onclick: () => close() }),
+      el('button', { class: 'btn primary', text: 'Send prompt', onclick: submit }),
+    ],
+  );
+}
+
+async function showPayment(reference) {
+  state.app = null;
+  stopBillingPoll();
+
+  document.getElementById('crumb').textContent = 'Payment';
+  clear(document.getElementById('topbar-actions')).append(
+    el('button', { class: 'btn', text: 'Back to billing', onclick: () => go('#/billing') }),
+  );
+  renderSidebar();
+  const content = clear(document.getElementById('content'));
+
+  const head = el('div', {});
+  const body = el('div', {});
+  content.append(head, body);
+
+  const draw = (data) => {
+    const payment = data.payment;
+    clear(head).append(
+      el('h2', { class: 'sec', text: money(payment.amount) + ' · ' + payment.plan }),
+      el('p', { class: 'sub mono', text: payment.reference }),
+      statusBanner(payment),
+    );
+
+    clear(body).append(
+      el('div', { class: 'cols' }, [
+        el('div', {}, [
+          el('div', { class: 'paycard' }, [
+            el('h3', { class: 'paycard-h', text: 'What the server has done' }),
+            el('div', { class: 'console' }, payment.trail.map((line) =>
+              el('div', { class: 'l', text: line }))),
+          ]),
+        ]),
+        el('div', {}, [
+          data.prompt ? handsetPanel(data.prompt, payment) : null,
+          el('div', { class: 'paycard' }, [
+            el('h3', { class: 'paycard-h', text: 'Details' }),
+            kv('Status', payment.status),
+            kv('Checks made', String(payment.checks)),
+            kv('Gateway id', payment.transaction_id || '—'),
+            kv('Mode', payment.mode),
+            payment.status === 'pending'
+              ? kv('Gives up in', payment.expires_in + 's')
+              : null,
+          ].filter(Boolean)),
+          el('button', {
+            class: 'btn full',
+            text: 'Check now',
+            onclick: async () => {
+              try {
+                draw(await api('POST', `/api/billing/payments/${reference}/check`));
+              } catch (error) { toast(error.message, true); }
+            },
+          }),
+        ]),
+      ]),
+    );
+
+    if (payment.status !== 'pending') stopBillingPoll();
+  };
+
+  draw(await api('GET', '/api/billing/payments/' + reference));
+
+  // A plain read on a timer. The server's own sweeper is what moves the payment
+  // along; this only watches. Close the tab and it still finishes.
+  billingTimer = setInterval(async () => {
+    try {
+      draw(await api('GET', '/api/billing/payments/' + reference));
+    } catch {
+      stopBillingPoll();
+    }
+  }, 2000);
+}
+
+function statusBanner(payment) {
+  if (payment.status === 'successful') {
+    return el('div', { class: 'banner ok' }, [
+      el('b', { text: 'Paid' }), payment.message || 'The plan is active.',
+    ]);
+  }
+  if (payment.status === 'failed') {
+    return el('div', { class: 'banner err' }, [
+      el('b', { text: 'Not paid' }),
+      (payment.message || 'The payment did not go through.') +
+      ' Nothing was charged. You can start again.',
+    ]);
+  }
+  if (payment.status === 'abandoned') {
+    return el('div', { class: 'banner warn' }, [
+      el('b', { text: 'The prompt expired' }),
+      'It was not approved in time, so the server stopped checking. Starting ' +
+      'again sends a fresh prompt.',
+    ]);
+  }
+  return el('div', { class: 'banner info' }, [
+    el('b', { text: 'Check your phone' }),
+    `A prompt was sent to ${payment.phone}. Enter your PIN there to approve ` +
+    `${money(payment.amount)}. Safe to close this page — the server keeps checking.`,
+  ]);
+}
+
+/* The pretend handset. It exists only in demo mode and the server refuses the
+ * endpoint otherwise, so there is no version of this that can approve a real
+ * payment. */
+function handsetPanel(prompt, payment) {
+  const act = async (action) => {
+    try {
+      await api('POST', `/api/billing/demo/${payment.reference}`, { action });
+    } catch (error) { toast(error.message, true); }
+  };
+  const done = prompt.status !== 'pending';
+  return el('div', { class: 'paycard handset' }, [
+    el('h3', { class: 'paycard-h', text: 'Demo handset' }),
+    el('p', { class: 'hint', text: 'Stands in for the customer tapping their PIN. '
+      + 'Scenario: ' + (prompt.scenario || 'approve') }),
+    el('div', { class: 'handset-screen' }, [
+      el('div', { class: 'handset-from', text: 'Mobile Money' }),
+      el('div', { text: `Pay ${money(payment.amount)} to Cissytech?` }),
+      el('div', { class: 'hint mono', text: payment.reference }),
+    ]),
+    done
+      ? el('p', { class: 'hint', text: 'Answered: ' + prompt.status })
+      : el('div', { class: 'handset-actions' }, [
+          el('button', { class: 'btn primary sm', text: 'Enter PIN', onclick: () => act('approve') }),
+          el('button', { class: 'btn danger sm', text: 'Decline', onclick: () => act('decline') }),
+        ]),
+  ]);
+}
+
+function money(amount) {
+  return 'UGX ' + Number(amount || 0).toLocaleString('en-US');
+}
+
 /* ── routing ─────────────────────────────────────────────────────────── */
 
 function go(hash) {
@@ -1026,7 +1297,17 @@ function go(hash) {
 
 async function route() {
   const hash = location.hash || '#/';
+  stopBillingPoll();
   try {
+    const pay = hash.match(/^#\/billing\/pay\/([^/]+)$/);
+    if (pay) {
+      await showPayment(decodeURIComponent(pay[1]));
+      return;
+    }
+    if (hash === '#/billing') {
+      await showBilling();
+      return;
+    }
     const build = hash.match(/^#\/app\/([^/]+)\/build\/(\d+)$/);
     if (build) {
       await showBuild(decodeURIComponent(build[1]), build[2]);

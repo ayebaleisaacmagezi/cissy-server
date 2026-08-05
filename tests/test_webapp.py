@@ -274,5 +274,102 @@ class AuthTest(ServerTestCase):
             self.assertEqual(response.status, 200)
 
 
+class BillingTest(ServerTestCase):
+    def pay(self, plan="starter", phone="0772000000", **extra):
+        status, body = self.request(
+            "POST", "/api/billing/pay", {"plan": plan, "phone": phone, **extra}
+        )
+        return status, body
+
+    def test_billing_reports_demo_mode_with_no_key_configured(self):
+        # The default has to be the simulator. A half-configured live client
+        # would fail mid-payment instead of at startup.
+        status, body = self.request("GET", "/api/billing")
+        self.assertEqual(status, 200)
+        self.assertEqual(body["mode"], "demo")
+        self.assertFalse(body["subscription"]["active"])
+
+    def test_a_payment_starts_pending_and_is_readable_by_reference(self):
+        status, body = self.pay()
+        self.assertEqual(status, 200)
+        reference = body["payment"]["reference"]
+        self.assertEqual(body["payment"]["status"], "pending")
+
+        status, found = self.request("GET", f"/api/billing/payments/{reference}")
+        self.assertEqual(status, 200)
+        self.assertEqual(found["payment"]["reference"], reference)
+
+    def test_the_handset_approving_activates_the_plan(self):
+        _, body = self.pay()
+        reference = body["payment"]["reference"]
+        status, after = self.request(
+            "POST", f"/api/billing/demo/{reference}", {"action": "approve"}
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(after["payment"]["status"], "successful")
+        self.assertTrue(after["subscription"]["active"])
+
+    def test_the_handset_declining_leaves_no_subscription(self):
+        _, body = self.pay(plan="pro")
+        reference = body["payment"]["reference"]
+        _, after = self.request(
+            "POST", f"/api/billing/demo/{reference}", {"action": "decline"}
+        )
+        self.assertEqual(after["payment"]["status"], "failed")
+        self.assertFalse(after["subscription"]["active"])
+
+    def test_the_price_comes_from_the_plan_not_the_request(self):
+        # Nothing the browser sends may decide what a subscription costs.
+        _, body = self.pay(amount=1)
+        self.assertEqual(body["payment"]["amount"], 50_000)
+
+    def test_an_unknown_plan_is_refused(self):
+        status, body = self.pay(plan="platinum")
+        self.assertEqual(status, 422)
+        self.assertIn("platinum", body["error"])
+
+    def test_an_unusable_phone_number_is_refused(self):
+        status, _ = self.pay(phone="ring me")
+        self.assertEqual(status, 422)
+
+    def test_a_reference_cannot_walk_out_of_the_payments_directory(self):
+        status, _ = self.request(
+            "GET", "/api/billing/payments/..%2F..%2Fconfig", None
+        )
+        self.assertIn(status, (404, 422))
+
+    def test_billing_needs_the_password_like_everything_else(self):
+        # Only meaningful on the passworded case, which the subclass covers.
+        status, _ = self.request("GET", "/api/billing")
+        self.assertEqual(status, 200)
+
+
+class BillingLockedTest(BillingTest):
+    password = "let-me-in"
+
+    def test_billing_rejects_a_missing_password(self):
+        req = urllib.request.Request(self.base + "/api/billing")
+        try:
+            urllib.request.urlopen(req, timeout=10)
+            self.fail("expected 401")
+        except urllib.error.HTTPError as error:
+            self.assertEqual(error.code, 401)
+
+    def test_the_demo_handset_is_not_a_way_past_the_password(self):
+        _, body = self.pay()
+        reference = body["payment"]["reference"]
+        req = urllib.request.Request(
+            self.base + f"/api/billing/demo/{reference}",
+            data=b'{"action":"approve"}',
+            method="POST",
+        )
+        req.add_header("Content-Type", "application/json")
+        try:
+            urllib.request.urlopen(req, timeout=10)
+            self.fail("expected 401")
+        except urllib.error.HTTPError as error:
+            self.assertEqual(error.code, 401)
+
+
 if __name__ == "__main__":
     unittest.main()

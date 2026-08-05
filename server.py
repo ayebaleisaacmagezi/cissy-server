@@ -10,6 +10,13 @@ Reads its configuration from the environment:
     CISSY_HOST       interface to bind (default 127.0.0.1)
     CISSY_PORT       port to bind (default 8080)
     CISSY_ROOT       where projects/ lives (default alongside this file)
+
+Payments run against a simulator unless both of these are set, so the whole
+flow works before there is a Collecto account:
+
+    CISSY_COLLECTO_USERNAME   Collecto account username
+    CISSY_COLLECTO_KEY        x-api-key, issued against this machine's IP
+    CISSY_COLLECTO_REFERER    sent on every call; their WAF requires one
 """
 
 from __future__ import annotations
@@ -49,6 +56,10 @@ def main() -> int:
     state = toolchain.probe()
     print(f"Cissy {__version__} on http://{host}:{port}")
     print(f"Toolchain: {state.summary}")
+    if app.collecto_settings.live:
+        print(f"Payments: live, as {app.collecto_settings.username}")
+    else:
+        print("Payments: demo — no money moves, and the handset is a button.")
     if not state.ok:
         # Not fatal — the UI is still worth reaching, and it explains what is
         # missing far better than a failed build would.

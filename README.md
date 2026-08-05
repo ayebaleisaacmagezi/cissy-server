@@ -16,8 +16,12 @@ Create an app, configure it, upload an icon and a keystore, press Build, watch
 the log stream, download a signed APK or AAB — and the whole Flutter project as
 a `.zip` for the iOS half.
 
-Not yet: the splash image is stored but not applied, and old build artifacts
-are never deleted.
+Mobile-money subscriptions through Collecto, running against a simulator until
+there is an account — see below.
+
+Not yet: there are no user accounts, so the subscription is server-wide rather
+than per-customer. The splash image is stored but not applied, and old build
+artifacts are never deleted.
 
 ## Requirements
 
@@ -45,6 +49,9 @@ No venv, no `pip install` — it uses only the standard library. Listens on
 | `CISSY_HOST` | `127.0.0.1` | |
 | `CISSY_PORT` | `8080` | |
 | `CISSY_ROOT` | this directory | Where `projects/` lives. |
+| `CISSY_COLLECTO_USERNAME` | none | Collecto account. Payments stay in demo mode until this and the key are both set. |
+| `CISSY_COLLECTO_KEY` | none | `x-api-key`, issued against **this machine's IP**. |
+| `CISSY_COLLECTO_REFERER` | `https://appbuilder.cissytech.com` | Sent on every call; their WAF rejects requests without one. |
 
 To reach a localhost-only server from your machine:
 
@@ -68,6 +75,9 @@ projects/        runtime data, gitignored
     config.json  the app's settings
     generated/   the Flutter project (kept warm between builds)
     builds/<n>/  artifacts and log for one build
+payments/        one JSON file per payment, gitignored
+  _demo/         simulated handset prompts, demo mode only
+subscription.json  the current plan (server-wide until accounts exist)
 docs/PLAN.md     what is built and what is next
 ```
 
@@ -79,6 +89,42 @@ cd /opt/cissy && pip install -r requirements.txt
 ```
 
 Updates are `git pull` and a restart.
+
+## Payments
+
+Collecto is not shaped like Stripe. There is no checkout page, no redirect and
+**no webhook**. You call `requestToPay`, the customer's handset gets a PIN
+prompt, and you find out what happened by calling `requestToPayStatus` with the
+same reference until it answers.
+
+That shapes the code more than anything else here:
+
+- The payment record is written to disk **before** the gateway is called. If the
+  process dies in between, the reference is the only thread back to the money.
+- A background sweeper chases every open payment, so a prompt approved after the
+  browser closed still activates the plan. Close the tab, restart the server —
+  it still finishes.
+- A 2xx is not a payment. `data.requestToPay: true` only means the call was
+  accepted; only `data.status == SUCCESSFUL` is money.
+- Timeouts, dropped connections and non-JSON bodies mean *unknown*, so they keep
+  the payment open. Reading them as failure would keep someone's money and give
+  them nothing.
+- `requestToPay` is never retried automatically — a repeat could mean two prompts
+  and two debits. Status lookups are reads, so they retry freely.
+
+### Demo mode
+
+With no `CISSY_COLLECTO_USERNAME` and `CISSY_COLLECTO_KEY`, payments run against
+an in-process simulator and the Billing screen grows a **demo handset** — a panel
+that stands in for the customer tapping their PIN. It can also be told to
+decline, to never answer, to drop a connection, or to return something that is
+not JSON, because those are the paths worth watching before real money is
+involved.
+
+Going live is two environment variables and a restart. Note that the API key is
+issued against a **username and an IP**: move the box or put a proxy with a
+different outbound address in front of it and payments stop while everything
+else keeps working.
 
 ## A note on signing keys
 

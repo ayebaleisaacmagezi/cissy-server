@@ -173,6 +173,51 @@ disagree.
 
 ---
 
+## Phase 7 — payments — **demo complete**
+
+Built ahead of accounts, on purpose, because the Collecto integration turned out
+to be the part most likely to be designed wrong. It was: the first draft of the
+UI mockup drew a hosted checkout and a signed webhook, which is what Stripe and
+Flutterwave do. Collecto does neither.
+
+What the real reference changed:
+
+- **No redirect.** The customer never leaves Cissy. They type a number, we call
+  `requestToPay`, and their handset gets the prompt.
+- **No webhook.** Nothing calls us. Outcomes are fetched by polling
+  `requestToPayStatus` with the reference we chose. Signature verification and
+  event replay — two problems in the original design — simply do not exist here.
+- **A new problem in their place:** something server-side has to keep asking
+  after the browser has gone. That is `PaymentService`'s sweeper thread, and the
+  reason every piece of payment state is a file rather than a variable.
+
+Decisions worth keeping:
+
+- The record is written **before** the gateway call. A crash in between must
+  still leave a reference to look the payment up by.
+- `requestToPay` is never auto-retried; a repeat risks two prompts and two
+  debits. Status lookups retry freely because they are reads.
+- Anything unknown — a timeout, a dropped connection, a body that is not JSON,
+  an unrecognised status word — counts as *pending*. Reading it as failure is
+  how you keep someone's money and give them nothing.
+- An unanswered prompt becomes `abandoned` after five minutes, not `failed`.
+  Nothing was charged and they can simply start again.
+- The price comes from the plan table, never from the request.
+
+`DemoGateway` runs the same two calls in memory with a fake handset, so the flow
+is complete and demonstrable with no Collecto account. It can decline, stall,
+drop a connection and return rubbish; its prompts live on disk so that
+restarting the server mid-payment shows the sweeper resuming.
+
+**Not done:** there are no accounts, so a successful payment activates one
+server-wide `subscription.json` rather than a customer's. Nothing enforces the
+build allowance yet. Both wait on accounts.
+
+**Needed to go live:** a Collecto username and an `x-api-key` registered against
+`198.23.52.184`. Real prices. HTTPS.
+
+---
+
 ## Deferred
 
 - **Auth.** One shared password before it faces the public internet. Until then,

@@ -2,6 +2,11 @@
 # Lives on the server only; never committed.
 projects/
 
+# Payment records and the current subscription. Real ones name real customers'
+# phone numbers, so they belong on the box and nowhere else.
+payments/
+subscription.json
+
 # Signing material. If any of these ever reach a commit, the upload key is
 # compromised and Google will not reset it.
 *.jks

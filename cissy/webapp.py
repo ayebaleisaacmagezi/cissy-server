@@ -24,8 +24,10 @@ from typing import Any, Callable
 from urllib.parse import parse_qs, unquote, urlparse
 
 from .build import BuildRunner
+from .collecto import CollectoGateway, DemoGateway, Settings as CollectoSettings
 from .config import AppConfig, slugify
 from .errors import CissyError, NotFoundError, ValidationError
+from .payments import PLANS, PaymentService, PaymentStore, Subscription
 from .signing import SigningCredentials
 from .store import ProjectStore
 from . import generate, toolchain
@@ -100,11 +102,38 @@ class Router:
 class Application:
     """Owns the store, the routes and the shared password."""
 
-    def __init__(self, *, root: Path, web_dir: Path, password: str | None) -> None:
+    def __init__(
+        self,
+        *,
+        root: Path,
+        web_dir: Path,
+        password: str | None,
+        collecto: CollectoSettings | None = None,
+    ) -> None:
         self.store = ProjectStore(root / "projects")
         self.web_dir = web_dir
         self.password = password
         self.builds = BuildRunner(self.store)
+
+        # Live only when both a username and a key are present. The default is
+        # the simulator rather than a half-configured client, because a client
+        # missing its key fails at the worst possible moment — mid-payment —
+        # instead of at startup.
+        settings = collecto or CollectoSettings.from_env()
+        self.collecto_settings = settings
+        gateway: Any = (
+            CollectoGateway(settings)
+            if settings.live
+            else DemoGateway(root / "payments" / "_demo")
+        )
+        self.gateway = gateway
+        self.payments = PaymentService(
+            store=PaymentStore(root / "payments"),
+            gateway=gateway,
+            subscription=Subscription(root / "subscription.json"),
+        )
+        self.payments.start_worker()
+
         self.router = Router()
         self._register()
 
@@ -132,6 +161,11 @@ class Application:
             "/api/apps/<app_id>/builds/<number>/artifacts/<name>",
             self.download_artifact,
         )
+        add("GET", "/api/billing", self.billing)
+        add("POST", "/api/billing/pay", self.start_payment)
+        add("GET", "/api/billing/payments/<reference>", self.get_payment)
+        add("POST", "/api/billing/payments/<reference>/check", self.check_payment)
+        add("POST", "/api/billing/demo/<reference>", self.demo_handset)
 
     def health(self, request: Request) -> dict[str, Any]:
         refresh = "refresh" in request.query
@@ -392,6 +426,86 @@ class Application:
             return json.loads(record.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             return None
+
+    # ── billing ──────────────────────────────────────────────────────────
+
+    def billing(self, request: Request) -> dict[str, Any]:
+        return {
+            "mode": getattr(self.gateway, "mode", "demo"),
+            "subscription": self.payments.subscription.read(),
+            "plans": [
+                {
+                    "id": plan.id,
+                    "name": plan.name,
+                    "amount": plan.amount,
+                    "builds": plan.builds,
+                    "blurb": plan.blurb,
+                }
+                for plan in PLANS.values()
+            ],
+            "payments": [p.to_json() for p in self.payments.store.list()[:20]],
+        }
+
+    def start_payment(self, request: Request) -> dict[str, Any]:
+        data = request.json()
+        payment = self.payments.start(
+            plan_id=str(data.get("plan") or ""),
+            phone=str(data.get("phone") or ""),
+        )
+        # A demo scenario is chosen up front so the awkward paths — a decline,
+        # a prompt nobody answers, a dropped connection — can be shown on
+        # purpose instead of waited for.
+        scenario = str(data.get("scenario") or "").strip()
+        if scenario and isinstance(self.gateway, DemoGateway):
+            self.gateway.set_scenario(payment.reference, scenario)
+        return {"payment": payment.to_json()}
+
+    def get_payment(self, request: Request) -> dict[str, Any]:
+        reference = request.params["reference"]
+        payment = self.payments.store.get(reference)
+        return {
+            "payment": payment.to_json(),
+            "prompt": self._demo_prompt(reference),
+            "subscription": self.payments.subscription.read(),
+        }
+
+    def check_payment(self, request: Request) -> dict[str, Any]:
+        """Poll now rather than waiting for the sweeper.
+
+        Only ever an impatience shortcut. The sweeper is what makes a payment
+        finish when nobody is watching, and this endpoint disappearing would
+        change nothing about whether people get what they paid for.
+        """
+        reference = request.params["reference"]
+        payment = self.payments.poll(reference)
+        return {
+            "payment": payment.to_json(),
+            "prompt": self._demo_prompt(reference),
+            "subscription": self.payments.subscription.read(),
+        }
+
+    def demo_handset(self, request: Request) -> dict[str, Any]:
+        """Stand in for the customer tapping their PIN.
+
+        There is no live equivalent and there must never be one — this exists
+        only while `DemoGateway` is in play.
+        """
+        if not isinstance(self.gateway, DemoGateway):
+            raise NotFoundError("The demo handset only exists in demo mode.")
+        reference = request.params["reference"]
+        action = str(request.json().get("action") or "")
+        self.gateway.act(reference, action)
+        payment = self.payments.poll(reference)
+        return {
+            "payment": payment.to_json(),
+            "prompt": self._demo_prompt(reference),
+            "subscription": self.payments.subscription.read(),
+        }
+
+    def _demo_prompt(self, reference: str) -> dict[str, Any] | None:
+        if not isinstance(self.gateway, DemoGateway):
+            return None
+        return self.gateway.prompt(reference)
 
     # ── dispatch ─────────────────────────────────────────────────────────
 
