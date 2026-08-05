@@ -1,13 +1,21 @@
 """Where apps live on disk, and how they are read and written.
 
-One directory per app:
+One directory per app, inside one directory per user:
 
-    projects/<id>/
+    projects/<user-id>/<app-id>/
       config.json      the manifest
       assets/          icon, splash, keystore
       generated/       the Flutter project, kept warm between builds
       builds/<n>/      artifacts and log for a single build
-      dist/            zipped project archives
+
+A `ProjectStore` is rooted at one user's directory, so it cannot name another
+user's app: `app_dir` joins a single sanitised segment and `_safe_id` rejects
+anything containing a slash. That makes ownership structural rather than a
+check somebody has to remember. Miss one check with a flat layout and a
+customer downloads another customer's keystore, which is a key Google will
+never reset.
+
+`Workspaces` below hands out one store per user.
 
 Nothing here knows about HTTP; the web layer turns these calls into responses.
 """
@@ -213,15 +221,60 @@ class ProjectStore:
         )
 
 
-def _safe_id(app_id: str) -> str:
-    """Reject anything that could escape the projects directory.
+class Workspaces:
+    """One `ProjectStore` per user, rooted at that user's directory.
 
-    App ids arrive from URLs, so `../secrets` or an absolute path would
-    otherwise let a request read or write outside `projects/`. Rejecting rather
+    Cached because `ProjectStore.__init__` creates its directory, and a fresh
+    one per request would mkdir on every call. The cache is keyed by the
+    sanitised id, so a bad id never reaches the filesystem at all.
+    """
+
+    def __init__(self, root: Path) -> None:
+        self.root = Path(root)
+        self.root.mkdir(parents=True, exist_ok=True)
+        self._stores: dict[str, ProjectStore] = {}
+
+    def for_user(self, user_id: str) -> ProjectStore:
+        safe = _safe_id(user_id)
+        store = self._stores.get(safe)
+        if store is None:
+            store = ProjectStore(self.root / safe)
+            self._stores[safe] = store
+        return store
+
+    def user_ids(self) -> list[str]:
+        """Every user directory that exists on disk.
+
+        Used by the admin view and by disk accounting. The database is the
+        authority on who exists; this is the authority on who has taken space.
+        """
+        if not self.root.is_dir():
+            return []
+        return sorted(p.name for p in self.root.iterdir() if p.is_dir())
+
+    def disk_used(self, user_id: str) -> int:
+        directory = self.root / _safe_id(user_id)
+        if not directory.is_dir():
+            return 0
+        total = 0
+        for path in directory.rglob("*"):
+            try:
+                if path.is_file():
+                    total += path.stat().st_size
+            except OSError:
+                continue
+        return total
+
+
+def _safe_id(app_id: str) -> str:
+    """Reject anything that could escape the directory it is joined to.
+
+    Ids arrive from URLs, so `../secrets`, `a/b` or an absolute path would
+    otherwise let a request read or write outside its own tree. Rejecting rather
     than silently cleaning means a typo fails loudly instead of hitting the
-    wrong app.
+    wrong app, and it is what keeps one user's store from naming another's.
     """
     cleaned = slugify(app_id)
     if cleaned != app_id.strip().lower():
-        raise ValidationError(f'"{app_id}" is not a valid app id.')
+        raise ValidationError(f'"{app_id}" is not a valid id.')
     return cleaned

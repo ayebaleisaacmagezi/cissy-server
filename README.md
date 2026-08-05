@@ -1,4 +1,4 @@
-# Cissy Build Server
+# Cissyweb2app
 
 Turns a website into an Android app from a browser. Runs on a Linux box that has
 Flutter, the Android SDK and a JDK; you reach it from anywhere.
@@ -51,7 +51,7 @@ No venv, no `pip install` — it uses only the standard library. Listens on
 | `CISSY_ROOT` | this directory | Where `projects/` lives. |
 | `CISSY_COLLECTO_USERNAME` | none | Collecto account. Payments stay in demo mode until this and the key are both set. |
 | `CISSY_COLLECTO_KEY` | none | `x-api-key`, issued against **this machine's IP**. |
-| `CISSY_COLLECTO_REFERER` | `https://appbuilder.cissytech.com` | Sent on every call; their WAF rejects requests without one. |
+| `CISSY_COLLECTO_REFERER` | `https://web2app.cissytech.com` | Sent on every call; their WAF rejects requests without one. |
 
 To reach a localhost-only server from your machine:
 

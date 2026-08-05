@@ -7,6 +7,12 @@ projects/
 payments/
 subscription.json
 
+# Accounts, sessions and verification codes. Real customers, real password
+# hashes, real phone numbers. Never leaves the box.
+accounts.db
+accounts.db-wal
+accounts.db-shm
+
 # Signing material. If any of these ever reach a commit, the upload key is
 # compromised and Google will not reset it.
 *.jks

@@ -1,6 +1,6 @@
 'use strict';
 
-/* Cissy Build — browser client.
+/* Cissyweb2app — browser client.
  *
  * No framework and no build step: the whole UI is this file, so editing it on
  * the server means a refresh rather than a toolchain.
@@ -26,7 +26,9 @@ const state = {
   builds: [],
   dirty: false,
   health: null,
-  password: localStorage.getItem('cissy-password') || '',
+  user: null,          // whoever is signed in, from /api/auth/session
+  demoSms: false,      // true when codes are simulated rather than texted
+  pending: null,       // a phone part-way through signup
   streaming: null,
 };
 
@@ -56,20 +58,11 @@ function clear(node) {
 
 /* ── api ─────────────────────────────────────────────────────────────── */
 
+/* Nothing to attach any more. The session is an HttpOnly cookie the browser
+ * sends on its own, which is also what makes artifact downloads work: a plain
+ * <a href> carries the cookie where it could never carry a custom header. */
 function authHeaders(extra = {}) {
-  const headers = { ...extra };
-  if (state.password) headers['X-Cissy-Password'] = state.password;
-  return headers;
-}
-
-/* Artifact downloads are ordinary links, and a browser following one sends no
- * custom headers — so the password has to travel as a cookie too, or every
- * download comes back 401 and Chrome says "try to sign in to the site". */
-function rememberPassword(password) {
-  state.password = password;
-  localStorage.setItem('cissy-password', password);
-  document.cookie =
-    `cissy_password=${encodeURIComponent(password)}; path=/; SameSite=Strict; max-age=31536000`;
+  return { ...extra };
 }
 
 async function api(method, path, body) {
@@ -81,8 +74,11 @@ async function api(method, path, body) {
 
   const response = await fetch(path, options);
   if (response.status === 401) {
-    await askForPassword(Boolean(state.password));
-    return api(method, path, body);
+    // The session went away, so stop pretending otherwise and send them to the
+    // sign-in screen rather than retrying into the same wall.
+    state.user = null;
+    if (!location.hash.startsWith('#/login')) go('#/login');
+    throw new Error('Sign in to continue.');
   }
 
   const payload = await response.json().catch(() => ({}));
@@ -172,33 +168,27 @@ function openModal(title, subtitle, bodyNodes, actions) {
   return close;
 }
 
-/* The page fires several requests at once, so a wrong or missing password
- * produces several 401s at the same moment. They must all wait on one prompt:
- * a dialog per request strands every request but the one that gets answered. */
-let passwordPrompt = null;
+/* ── who is signed in ─────────────────────────────────────────────────── */
 
-function askForPassword(wasWrong = false) {
-  if (passwordPrompt) return passwordPrompt;
+/* Public on purpose: it answers null rather than 401 when nobody is signed in,
+ * so the first thing the page does cannot put an error in front of a visitor
+ * who has simply not signed in yet. */
+async function loadSession() {
+  try {
+    const data = await api('GET', '/api/auth/session');
+    state.user = data.user;
+    state.demoSms = Boolean(data.demo_sms);
+  } catch {
+    state.user = null;
+  }
+  return state.user;
+}
 
-  passwordPrompt = new Promise((resolve) => {
-    const input = el('input', { class: 'input', type: 'password', value: '' });
-    const submit = () => {
-      if (!input.value) return;
-      rememberPassword(input.value);
-      passwordPrompt = null;
-      close();
-      resolve();
-    };
-    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
-    const close = openModal(
-      wasWrong ? 'That password was not accepted' : 'Password required',
-      'Whatever CISSY_PASSWORD was set to when the server was started.',
-      [el('div', { class: 'field' }, [input])],
-      [el('button', { class: 'btn primary', text: 'Unlock', onclick: submit })],
-    );
-  });
-
-  return passwordPrompt;
+async function logout() {
+  try { await api('POST', '/api/auth/logout'); } catch { /* leaving anyway */ }
+  state.user = null;
+  state.app = null;
+  location.href = '/';
 }
 
 /* ── health ──────────────────────────────────────────────────────────── */
@@ -226,6 +216,193 @@ async function refreshHealth(force = false) {
   }
 }
 
+
+/* ── signing up and signing in ─────────────────────────────────────────────
+ *
+ * These are the only screens that render without the app shell around them,
+ * because somebody who is not signed in has no sidebar to put anything in.
+ * `authScreen` hides the chrome; every other screen puts it back.
+ */
+
+function authScreen(title, subtitle, rows, footer) {
+  document.body.classList.add('signed-out');
+  document.getElementById('crumb').textContent = '';
+  clear(document.getElementById('side-nav'));
+  clear(document.getElementById('topbar-actions'));
+
+  const content = clear(document.getElementById('content'));
+  content.append(
+    el('div', { class: 'authwrap' }, [
+      el('div', { class: 'authcard' }, [
+        el('div', { class: 'authbrand' }, [
+          'Cissy', el('span', { text: 'web2app' }),
+        ]),
+        el('h2', { class: 'authtitle', text: title }),
+        subtitle ? el('p', { class: 'authsub', text: subtitle }) : null,
+        ...rows,
+        footer ? el('p', { class: 'authfoot' }, footer) : null,
+      ]),
+    ]),
+  );
+  const first = content.querySelector('input');
+  if (first) first.focus();
+  return content;
+}
+
+function authLink(label, hash) {
+  return el('a', {
+    class: 'authlink', text: label, href: hash,
+    onclick: (e) => { e.preventDefault(); go(hash); },
+  });
+}
+
+/* Submitting has to work from the keyboard, and a form that reloads the page
+ * would lose everything, so Enter is wired explicitly. */
+function onEnter(input, run) {
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') run(); });
+  return input;
+}
+
+function authError(box, message) {
+  clear(box).append(el('div', { class: 'banner err' }, [message]));
+}
+
+async function showSignup() {
+  const name = el('input', { class: 'input', placeholder: 'Isaac Ayebale', autocomplete: 'name' });
+  const phone = el('input', { class: 'input mono', placeholder: '0772 000 000', inputmode: 'tel' });
+  const pass = el('input', { class: 'input', type: 'password', placeholder: 'At least 8 characters', autocomplete: 'new-password' });
+  const problem = el('div', {});
+  const button = el('button', { class: 'btn primary full', text: 'Create account' });
+
+  const submit = async () => {
+    button.disabled = true;
+    clear(problem);
+    try {
+      const data = await api('POST', '/api/auth/signup', {
+        name: name.value, phone: phone.value, password: pass.value,
+      });
+      state.pending = { phone: data.phone, code: data.code || '', demo: data.demo };
+      go('#/verify');
+    } catch (error) {
+      authError(problem, error.message);
+      button.disabled = false;
+    }
+  };
+  button.addEventListener('click', submit);
+  for (const input of [name, phone, pass]) onEnter(input, submit);
+
+  authScreen(
+    'Create your account',
+    'Free. Three builds to try it with, and no card.',
+    [
+      problem,
+      field('Your name', name),
+      field('Phone number', phone,
+        'We send a code to confirm it. This is also the number you will pay from.'),
+      field('Password', pass),
+      button,
+    ],
+    ['Already have one? ', authLink('Log in', '#/login')],
+  );
+}
+
+async function showVerify() {
+  if (!state.pending) { go('#/signup'); return; }
+  const { phone } = state.pending;
+
+  const code = el('input', {
+    class: 'input mono code', placeholder: '000000', inputmode: 'numeric', maxlength: 6,
+  });
+  const problem = el('div', {});
+  const button = el('button', { class: 'btn primary full', text: 'Confirm' });
+
+  const submit = async () => {
+    button.disabled = true;
+    clear(problem);
+    try {
+      const data = await api('POST', '/api/auth/verify', { phone, code: code.value });
+      state.user = data.user;
+      state.pending = null;
+      toast('Welcome to Cissyweb2app');
+      go('#/');
+    } catch (error) {
+      authError(problem, error.message);
+      button.disabled = false;
+      code.select();
+    }
+  };
+  button.addEventListener('click', submit);
+  onEnter(code, submit);
+
+  const resend = el('button', {
+    class: 'btn full', text: 'Send another code',
+    onclick: async () => {
+      resend.disabled = true;
+      try {
+        const data = await api('POST', '/api/auth/resend', { phone });
+        state.pending = { ...state.pending, code: data.code || '' };
+        toast('A new code is on its way');
+        go('#/verify');
+      } catch (error) {
+        authError(problem, error.message);
+      }
+      resend.disabled = false;
+    },
+  });
+
+  authScreen(
+    'Check your phone',
+    `We sent a 6-digit code to ${phone}.`,
+    [
+      problem,
+      // Demo mode only. The server decides this, and a live one never sends
+      // the code back down the same channel it is verifying.
+      state.pending.demo && state.pending.code
+        ? el('div', { class: 'banner info demo-code' }, [
+            el('b', { text: 'Demo mode, nothing was texted' }),
+            'Your code is ',
+            el('code', { text: state.pending.code }),
+          ])
+        : null,
+      field('Code', code),
+      button,
+      resend,
+    ],
+    ['Wrong number? ', authLink('Start again', '#/signup')],
+  );
+}
+
+async function showLogin() {
+  const phone = el('input', { class: 'input mono', placeholder: '0772 000 000', inputmode: 'tel' });
+  const pass = el('input', { class: 'input', type: 'password', placeholder: 'Your password', autocomplete: 'current-password' });
+  const problem = el('div', {});
+  const button = el('button', { class: 'btn primary full', text: 'Log in' });
+
+  const submit = async () => {
+    button.disabled = true;
+    clear(problem);
+    try {
+      const data = await api('POST', '/api/auth/login', {
+        phone: phone.value, password: pass.value,
+      });
+      state.user = data.user;
+      go('#/');
+    } catch (error) {
+      authError(problem, error.message);
+      button.disabled = false;
+    }
+  };
+  button.addEventListener('click', submit);
+  for (const input of [phone, pass]) onEnter(input, submit);
+
+  authScreen(
+    'Welcome back',
+    'Log in to your apps and builds.',
+    [problem, field('Phone number', phone), field('Password', pass), button],
+    ['New here? ', authLink('Create an account', '#/signup')],
+  );
+}
+
 /* ── sidebar ─────────────────────────────────────────────────────────── */
 
 const SECTIONS = [
@@ -239,7 +416,49 @@ const SECTIONS = [
   ['build', 'Build', '▶'],
 ];
 
+function planCard() {
+  const user = state.user;
+  if (!user) return null;
+  const left = user.builds_left;
+  const total = user.builds_limit;
+  const share = total ? Math.max(0, Math.min(100, (left / total) * 100)) : 0;
+  const tone = left === 0 ? 'out' : left <= 1 ? 'low' : '';
+
+  return el('div', { class: 'plancard ' + tone }, [
+    el('b', { text: user.plan === 'trial' ? 'Free trial' : user.plan_name || 'Your plan' }),
+    el('div', { class: 'mut', text: `${left} build${left === 1 ? '' : 's'} left of ${total}` }),
+    el('div', { class: 'meter' }, [el('i', { style: `width:${share}%` })]),
+    el('button', {
+      class: 'btn sm full',
+      text: left === 0 ? 'Choose a plan' : 'See plans',
+      onclick: () => go('#/billing'),
+    }),
+  ]);
+}
+
+/* The avatar in the corner. Rendered from renderSidebar so every screen that
+ * redraws the chrome gets it, rather than each one remembering to. */
+function renderAccount() {
+  const box = clear(document.getElementById('account'));
+  if (!state.user) return;
+  const initials = state.user.name.trim().split(/\s+/).slice(0, 2)
+    .map((part) => part[0]).join('').toUpperCase();
+
+  box.append(el('button', {
+    class: 'avatar', text: initials, title: state.user.name,
+    onclick: () => openModal(state.user.name, state.user.phone, [
+      kv('Plan', state.user.plan === 'trial' ? 'Free trial' : state.user.plan),
+      kv('Builds left', `${state.user.builds_left} of ${state.user.builds_limit}`),
+      state.user.plan_until ? kv('Renews', shortDate(state.user.plan_until)) : null,
+    ].filter(Boolean), [
+      el('button', { class: 'btn', text: 'Log out', onclick: logout }),
+      el('button', { class: 'btn primary', text: 'Billing', onclick: () => go('#/billing') }),
+    ]),
+  }));
+}
+
 function renderSidebar() {
+  renderAccount();
   const nav = clear(document.getElementById('side-nav'));
 
   const onBilling = location.hash.startsWith('#/billing');
@@ -256,7 +475,13 @@ function renderSidebar() {
       el('button', { class: 'nav-item' + (onBilling ? ' active' : ''), onclick: () => go('#/billing') }, [
         el('span', { class: 'gl', text: '₵' }), 'Billing',
       ]),
+      state.user && state.user.is_admin
+        ? el('button', { class: 'nav-item', onclick: () => go('#/admin') }, [
+            el('span', { class: 'gl', text: '☰' }), 'Admin',
+          ])
+        : null,
     ]));
+    nav.append(planCard());
     return;
   }
 
@@ -1288,6 +1513,79 @@ function money(amount) {
   return 'UGX ' + Number(amount || 0).toLocaleString('en-US');
 }
 
+
+/* ── admin ────────────────────────────────────────────────────────────────
+ *
+ * The only screen that shows one customer's details to somebody else. It is
+ * reached on its own routes and its own endpoints rather than by a flag on a
+ * customer screen, so the answer to "could a customer see this?" is "there is
+ * no route", not "there is a check".
+ */
+async function showAdmin() {
+  state.app = null;
+  const data = await api('GET', '/api/admin/users');
+
+  document.getElementById('crumb').textContent = 'Admin';
+  clear(document.getElementById('topbar-actions'));
+  renderSidebar();
+  const content = clear(document.getElementById('content'));
+
+  content.append(
+    el('h2', { class: 'sec', text: 'Everyone on this server' }),
+    el('p', { class: 'sub', text:
+      `${data.users.length} account${data.users.length === 1 ? '' : 's'} · `
+      + `${data.sms_today} code${data.sms_today === 1 ? '' : 's'} sent today` }),
+  );
+
+  if (data.building) {
+    content.append(el('div', { class: 'banner warn' }, [
+      el('b', { text: 'A build is running' }),
+      `${data.building.app_id} for ${data.building.owner}`,
+    ]));
+  }
+
+  content.append(el('table', { class: 'apps' }, [
+    el('thead', {}, [el('tr', {},
+      ['Person', 'Plan', 'Builds', 'Disk', ''].map((h) => el('th', { text: h })))]),
+    el('tbody', {}, data.users.map((user) => el('tr', {}, [
+      el('td', {}, [
+        el('div', { class: 'app-name', text: user.name }),
+        el('div', { class: 'app-url mono', text: user.phone
+          + (user.apps.length ? ' · ' + user.apps.join(', ') : ' · no apps') }),
+      ]),
+      el('td', {}, [user.is_admin
+        ? el('span', { class: 'pill ok' }, [el('i', { class: 'dot' }), 'Admin'])
+        : el('span', { class: 'pill ' + (user.plan === 'trial' ? 'warn' : 'ok') },
+            [el('i', { class: 'dot' }), user.plan === 'trial' ? 'Trial' : user.plan])]),
+      el('td', { text: `${user.builds_used} / ${user.builds_limit}` }),
+      el('td', { text: megabytes(user.disk) }),
+      el('td', { style: 'text-align:right' }, [
+        el('button', {
+          class: 'btn sm', text: '+5 builds',
+          onclick: async (e) => {
+            e.target.disabled = true;
+            try {
+              await api('POST', `/api/admin/users/${user.id}/grant`, { builds: 5 });
+              toast(`Gave ${user.name} five more builds`);
+              route();
+            } catch (error) { toast(error.message, true); }
+          },
+        }),
+      ]),
+    ]))),
+  ]));
+
+  if (state.demoSms) {
+    content.append(el('h2', { class: 'sec', style: 'margin-top:28px', text: 'Codes sent' }));
+    try {
+      const log = await api('GET', '/api/admin/sms');
+      content.append(el('div', { class: 'console' }, log.messages.length
+        ? log.messages.map((m) => el('div', { class: 'l', text: `${m.phone}  ${m.message}` }))
+        : [el('div', { class: 'l', text: 'Nothing yet.' })]));
+    } catch { /* the live channel keeps no log, which is correct */ }
+  }
+}
+
 /* ── routing ─────────────────────────────────────────────────────────── */
 
 function go(hash) {
@@ -1295,10 +1593,25 @@ function go(hash) {
   else location.hash = hash;
 }
 
+const AUTH_ROUTES = ['#/login', '#/signup', '#/verify'];
+
 async function route() {
   const hash = location.hash || '#/';
   stopBillingPoll();
   try {
+    // Signed out: only the three auth screens exist. Signed in: those three
+    // are not screens you should be looking at, so they bounce home.
+    if (!state.user) {
+      if (hash === '#/signup') { await showSignup(); return; }
+      if (hash === '#/verify') { await showVerify(); return; }
+      await showLogin();
+      return;
+    }
+    document.body.classList.remove('signed-out');
+    if (AUTH_ROUTES.includes(hash)) { go('#/'); return; }
+
+    if (hash === '#/admin') { await showAdmin(); return; }
+
     const pay = hash.match(/^#\/billing\/pay\/([^/]+)$/);
     if (pay) {
       await showPayment(decodeURIComponent(pay[1]));
@@ -1347,8 +1660,13 @@ window.addEventListener('beforeunload', (event) => {
   if (state.dirty) event.preventDefault();
 });
 
-if (state.password) rememberPassword(state.password);
-
-route();
-refreshHealth();
-setInterval(refreshHealth, 60000);
+/* Session first, then draw. Routing before we know who this is would flash the
+ * app shell at somebody who is about to be shown a login screen. */
+(async () => {
+  await loadSession();
+  route();
+  if (state.user) {
+    refreshHealth();
+    setInterval(refreshHealth, 60000);
+  }
+})();

@@ -71,6 +71,7 @@ class BuildLogTest(unittest.TestCase):
         return Build(
             number=1,
             app_id="portal",
+            owner="tester",
             output="aab",
             version_name="1.0.0",
             version_code=1,
@@ -141,11 +142,11 @@ class OneAtATimeTest(unittest.TestCase):
         shutil.rmtree(self.root, ignore_errors=True)
 
     def test_a_second_build_is_refused_with_an_explanation(self):
-        # 4 GB cannot hold two Gradle builds, and a queue is more machinery than
-        # a single-user server needs.
+        # 4 GB cannot hold two Gradle builds.
         running = Build(
             number=1,
             app_id=self.config.id,
+            owner="someone-else",
             output="aab",
             version_name="1.0.0",
             version_code=1,
@@ -155,7 +156,13 @@ class OneAtATimeTest(unittest.TestCase):
 
         with self.assertRaises(ConflictError) as caught:
             self.runner.start(self.config, output="aab", credentials=None)
-        self.assertIn("already running", str(caught.exception))
+        message = str(caught.exception)
+        self.assertIn("busy", message)
+        # And it must not say whose. On a server with more than one customer
+        # that sentence hands the other person's app name to whoever pressed
+        # Build second.
+        self.assertNotIn(self.config.id, message)
+        self.assertNotIn("someone-else", message)
 
     def test_build_numbers_do_not_repeat(self):
         for number in (1, 2, 3):
@@ -246,6 +253,7 @@ class BuildArgsTest(unittest.TestCase):
         return Build(
             number=1,
             app_id="portal",
+            owner="tester",
             output=output,
             version_name="2.1.0",
             version_code=7,

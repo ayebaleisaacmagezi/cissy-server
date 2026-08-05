@@ -30,14 +30,12 @@ import time
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from . import collecto
 from .collecto import FAILED, PENDING, SUCCESSFUL, Reply
 from .errors import NotFoundError, ValidationError
 
-# Placeholder prices. Real ones are a decision for Samson, not a default worth
-# hiding in code — they are here so the flow has something to charge.
 @dataclass(frozen=True)
 class Plan:
     id: str
@@ -47,15 +45,23 @@ class Plan:
     blurb: str
 
 
+# Amounts are shillings, and they have to be: Collecto charges an integer UGX
+# amount and has no currency field. Starter is "$5" as a decision, but the price
+# stored here is the pinned shilling figure rather than anything computed from a
+# rate — a live rate would move the price daily and charge two customers on the
+# same plan differently. Revisit these deliberately when the rate has drifted.
 PLANS: dict[str, Plan] = {
-    "starter": Plan("starter", "Starter", 50_000, 25, "25 builds a month"),
-    "pro": Plan("pro", "Pro", 150_000, 100, "100 builds a month"),
+    "starter": Plan("starter", "Starter", 19_000, 25, "25 builds a month"),
+    "pro": Plan("pro", "Business", 57_000, 100, "100 builds a month"),
 }
 
 # How long a prompt is chased before it is called abandoned. It sits on someone's
-# handset until they act; five minutes is long enough for a person to find their
-# phone and short enough that a stale payment does not block a retry all day.
-CHASE_SECONDS = 5 * 60
+# handset until they act, and in practice a prompt is either approved within
+# seconds or not at all. The cost of the short window: approve at minute three
+# and the payment is already abandoned while the money has moved. Rare, and
+# recoverable by hand — which is the better trade than holding every failed
+# attempt open for five minutes.
+CHASE_SECONDS = 2 * 60
 
 # Tight while the customer is plausibly still looking at the phone, slower after.
 FAST_INTERVAL = 4.0
@@ -82,6 +88,7 @@ class Payment:
     plan: str
     amount: int
     phone: str
+    owner: str = ""
     status: str = OPEN
     mode: str = "demo"
     message: str = ""
@@ -107,6 +114,7 @@ class Payment:
             "plan": self.plan,
             "amount": self.amount,
             "phone": self.phone,
+            "owner": self.owner,
             "status": self.status,
             "mode": self.mode,
             "message": self.message,
@@ -128,6 +136,7 @@ class Payment:
             plan=str(data.get("plan", "")),
             amount=int(data.get("amount", 0)),
             phone=str(data.get("phone", "")),
+            owner=str(data.get("owner", "")),
             status=str(data.get("status", OPEN)),
             mode=str(data.get("mode", "demo")),
             message=str(data.get("message", "")),
@@ -183,6 +192,10 @@ class PaymentStore:
     def open_payments(self) -> list[Payment]:
         return [p for p in self.list() if not p.settled]
 
+    def for_owner(self, owner: str, limit: int = 20) -> list[Payment]:
+        """One customer's payments. Never anybody else's."""
+        return [p for p in self.list() if p.owner == owner][:limit]
+
 
 class Subscription:
     """What a paid-for month looks like while there are no accounts.
@@ -229,17 +242,22 @@ class PaymentService:
         store: PaymentStore,
         gateway: Any,
         subscription: Subscription,
+        on_paid: Callable[[Payment], None] | None = None,
     ) -> None:
         self.store = store
         self.gateway = gateway
         self.subscription = subscription
+        # Called once, when a payment first reaches SUCCESSFUL. This is where a
+        # user's plan gets switched on. It is a hook rather than a direct call
+        # into accounts so that this module stays ignorant of who anyone is.
+        self.on_paid = on_paid
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._lock = threading.Lock()
 
     # ── starting one ─────────────────────────────────────────────────────
 
-    def start(self, *, plan_id: str, phone: str) -> Payment:
+    def start(self, *, plan_id: str, phone: str, owner: str = "") -> Payment:
         plan = PLANS.get(plan_id)
         if plan is None:
             raise ValidationError(f'There is no "{plan_id}" plan.')
@@ -250,6 +268,7 @@ class PaymentService:
             plan=plan.id,
             amount=plan.amount,
             phone=number,
+            owner=owner,
             mode=getattr(self.gateway, "mode", "demo"),
             created_at=_stamp(),
             started=_now(),
@@ -341,13 +360,22 @@ class PaymentService:
 
         if reply.status == SUCCESSFUL:
             record = self.subscription.activate(payment)
-            return replace(
+            settled = replace(
                 payment,
                 status=SUCCESSFUL,
                 message="Payment received.",
                 trail=payment.trail
-                + (f"{_stamp()} · SUCCESSFUL — {record['plan_name']} active until {record['until']}",),
+                + (f"{_stamp()} - SUCCESSFUL, {record['plan_name']} active until {record['until']}",),
             )
+            if self.on_paid is not None:
+                # Never allowed to undo the payment. The money moved; a failure
+                # to switch the plan on is a support problem, not a reason to
+                # mark a paid subscription unpaid.
+                try:
+                    self.on_paid(settled)
+                except Exception:  # noqa: BLE001
+                    pass
+            return settled
         if reply.status == FAILED:
             return replace(
                 payment,

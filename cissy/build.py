@@ -52,6 +52,7 @@ class Build:
 
     number: int
     app_id: str
+    owner: str
     output: Output
     version_name: str
     version_code: int
@@ -96,6 +97,7 @@ class Build:
         return {
             "number": self.number,
             "app_id": self.app_id,
+            "owner": self.owner,
             "status": self.status,
             "output": self.output,
             "version_name": self.version_name,
@@ -112,18 +114,22 @@ class Build:
 class BuildRunner:
     """Owns the one-at-a-time rule and the currently running build."""
 
-    def __init__(self, store: ProjectStore) -> None:
+    def __init__(self, store: ProjectStore | None = None) -> None:
+        # The default store exists only for the single-tenant case and for
+        # tests. With accounts, every build carries the store rooted at its
+        # owner's directory, because that is what makes one customer unable to
+        # reach another's project even if a check above is forgotten.
         self.store = store
         self._lock = threading.Lock()
         self._current: Build | None = None
-        self._history: dict[tuple[str, int], Build] = {}
+        self._history: dict[tuple[str, str, int], Build] = {}
 
     @property
     def current(self) -> Build | None:
         return self._current
 
-    def get(self, app_id: str, number: int) -> Build | None:
-        return self._history.get((app_id, number))
+    def get(self, owner: str, app_id: str, number: int) -> Build | None:
+        return self._history.get((owner, app_id, number))
 
     def start(
         self,
@@ -131,30 +137,39 @@ class BuildRunner:
         *,
         output: Output,
         credentials: SigningCredentials | None,
+        store: ProjectStore | None = None,
+        owner: str = "",
     ) -> Build:
+        store = store or self.store
+        if store is None:
+            raise ConflictError("No workspace was given for this build.")
+
         with self._lock:
             if self._current and self._current.status == "running":
-                running = self._current
+                # Deliberately says nothing about whose build it is. On a
+                # multi-tenant box that sentence would leak another customer's
+                # app name to whoever pressed Build second.
                 raise ConflictError(
-                    f"A build of {running.app_id} is already running. This "
-                    f"server runs one at a time — Gradle needs most of the "
-                    f"available memory."
+                    "The build machine is busy with another build. It runs one "
+                    "at a time because Gradle needs most of the memory. Try "
+                    "again in a few minutes."
                 )
-            number = self.store.next_build_number(config.id)
+            number = store.next_build_number(config.id)
             build = Build(
                 number=number,
                 app_id=config.id,
+                owner=owner,
                 output=output,
                 version_name=config.version_name,
                 version_code=config.version_code,
                 signed=credentials is not None,
             )
             self._current = build
-            self._history[(config.id, number)] = build
+            self._history[(owner, config.id, number)] = build
 
         thread = threading.Thread(
             target=self._run,
-            args=(build, config, credentials),
+            args=(build, config, credentials, store),
             daemon=True,
             name=f"build-{config.id}-{number}",
         )
@@ -168,8 +183,9 @@ class BuildRunner:
         build: Build,
         config: AppConfig,
         credentials: SigningCredentials | None,
+        store: ProjectStore,
     ) -> None:
-        project_dir = self.store.generated_dir(config.id)
+        project_dir = store.generated_dir(config.id)
         try:
             if credentials is None:
                 build.log(
@@ -177,7 +193,7 @@ class BuildRunner:
                     "with a debug key and Google Play will reject it."
                 )
 
-            generate.generate(config, self.store, build.log)
+            generate.generate(config, store, build.log)
             signing.apply(project_dir, credentials)
 
             build.log("$ flutter pub get")
@@ -189,7 +205,7 @@ class BuildRunner:
             build.log("$ flutter " + " ".join(args))
             self._flutter(build, project_dir, args)
 
-            self._collect(build, config, project_dir)
+            self._collect(build, config, project_dir, store)
             build.status = "succeeded"
             build.log(f"Done in {build.duration:.0f}s")
 
@@ -204,12 +220,12 @@ class BuildRunner:
             # The passwords must not outlive the build that needed them.
             signing.cleanup(project_dir)
             build.finished_at = time.time()
-            self._record(build)
+            self._record(build, store)
             with self._lock:
                 if self._current is build:
                     self._current = None
 
-    def _record(self, build: Build) -> None:
+    def _record(self, build: Build, store: ProjectStore) -> None:
         """Write the outcome and the log to disk.
 
         In-memory state dies with the process, and the build history is most of
@@ -217,7 +233,7 @@ class BuildRunner:
         successful build into a reported failure, so this never raises.
         """
         try:
-            directory = self.store.build_dir(build.app_id, build.number)
+            directory = store.build_dir(build.app_id, build.number)
             directory.mkdir(parents=True, exist_ok=True)
             (directory / "build.json").write_text(
                 json.dumps(build.to_json(), indent=2) + "\n", encoding="utf-8"
@@ -278,14 +294,16 @@ class BuildRunner:
         if code != 0:
             raise RuntimeError(f"flutter {args[0]} exited with code {code}")
 
-    def _collect(self, build: Build, config: AppConfig, project_dir: Path) -> None:
+    def _collect(
+        self, build: Build, config: AppConfig, project_dir: Path, store: ProjectStore
+    ) -> None:
         """Copy the artifacts out of build/ and make the project archive.
 
         Copied rather than referenced because the next build overwrites
         `build/`, and a download link that quietly starts serving a different
         version is worse than one that 404s.
         """
-        destination = self.store.build_dir(config.id, build.number)
+        destination = store.build_dir(config.id, build.number)
         destination.mkdir(parents=True, exist_ok=True)
 
         if build.output == "aab":

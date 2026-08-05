@@ -97,7 +97,7 @@ class Settings:
     username: str = ""
     api_key: str = ""
     base_url: str = DEFAULT_BASE_URL
-    referer: str = "https://appbuilder.cissytech.com"
+    referer: str = "https://web2app.cissytech.com"
     user_agent: str = USER_AGENT
     timeout: float = 20.0
 
@@ -113,7 +113,7 @@ class Settings:
             api_key=source.get("CISSY_COLLECTO_KEY", "").strip(),
             base_url=source.get("CISSY_COLLECTO_URL", DEFAULT_BASE_URL).rstrip("/"),
             referer=source.get(
-                "CISSY_COLLECTO_REFERER", "https://appbuilder.cissytech.com"
+                "CISSY_COLLECTO_REFERER", "https://web2app.cissytech.com"
             ),
         )
 
@@ -145,6 +145,20 @@ class CollectoGateway:
                 "paymentOption": "mobilemoney",
             },
             flag="requestToPay",
+            repeatable=False,
+        )
+
+    def send_sms(self, *, phone: str, message: str, reference: str) -> Reply:
+        """One text. Not repeatable, because a retry sends a second message.
+
+        Their reply carries no status word to poll, only the `data.sms` flag
+        saying the send was accepted, so `Reply.status` here stays pending and
+        means nothing. Read `accepted`.
+        """
+        return self._post(
+            "sendSingleSMS",
+            {"phone": phone, "message": message, "reference": reference},
+            flag="sms",
             repeatable=False,
         )
 
