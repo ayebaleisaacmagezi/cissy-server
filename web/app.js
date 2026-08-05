@@ -56,6 +56,40 @@ function clear(node) {
   return node;
 }
 
+/* Inline SVG icons for the chrome. Static strings only — nothing here ever
+ * carries user input, which is what makes innerHTML safe in this one place. */
+const ICONS = {
+  apps: '<rect x="3" y="3" width="7.5" height="7.5" rx="1.8"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.8"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.8"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.8"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  billing: '<rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="M2.5 9.5h19M6 15h4"/>',
+  admin: '<path d="M12 3l7 3v5c0 4.4-3 7.5-7 9-4-1.5-7-4.6-7-9V6z"/>',
+  overview: '<path d="M3 11l9-7 9 7M5.5 9.5V20h13V9.5"/>',
+  identity: '<circle cx="12" cy="8" r="3.5"/><path d="M5.5 20c1-3.6 3.5-5.2 6.5-5.2s5.5 1.6 6.5 5.2"/>',
+  webview: '<circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="4" ry="9"/><path d="M3 12h18"/>',
+  branding: '<rect x="3" y="4.5" width="18" height="15" rx="2.2"/><circle cx="8.5" cy="10" r="1.6"/><path d="M3 17l5.5-4.5 3.5 3 4-4L21 16"/>',
+  features: '<path d="M4 8h8m6 0h2M4 16h2m8 0h6"/><circle cx="15" cy="8" r="2.2"/><circle cx="9" cy="16" r="2.2"/>',
+  offline: '<path d="M7 18a4.5 4.5 0 1 1 .6-8.96A6 6 0 0 1 19.3 11 3.6 3.6 0 0 1 18 18z"/>',
+  signing: '<circle cx="8" cy="15" r="4.2"/><path d="M11.2 11.8L20 3m-4 4l3 3"/>',
+  build: '<path d="M8 5.5L19 12 8 18.5z"/>',
+  chevron: '<path d="M6 9l6 6 6-6"/>',
+};
+
+function icon(name, cls = 'gl') {
+  const span = el('span', { class: cls });
+  span.innerHTML =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" '
+    + 'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+    + (ICONS[name] || '') + '</svg>';
+  return span;
+}
+
+/* The gradient square that stands in for an app icon, carrying the app's
+ * initial so a list of them is tellable apart. */
+function appIcon(name) {
+  const letter = (name || '').trim().charAt(0).toUpperCase();
+  return el('span', { class: 'ico', text: letter });
+}
+
 /* ── api ─────────────────────────────────────────────────────────────── */
 
 /* Nothing to attach any more. The session is an HttpOnly cookie the browser
@@ -235,7 +269,7 @@ function authScreen(title, subtitle, rows, footer) {
     el('div', { class: 'authwrap' }, [
       el('div', { class: 'authcard' }, [
         el('div', { class: 'authbrand' }, [
-          'Cissy', el('span', { text: 'web2app' }),
+          'Cissy', el('span', { text: 'Web2App' }),
         ]),
         el('h2', { class: 'authtitle', text: title }),
         subtitle ? el('p', { class: 'authsub', text: subtitle }) : null,
@@ -268,8 +302,8 @@ function authError(box, message) {
 }
 
 async function showSignup() {
-  const name = el('input', { class: 'input', placeholder: 'Isaac Ayebale', autocomplete: 'name' });
-  const phone = el('input', { class: 'input mono', placeholder: '0772 000 000', inputmode: 'tel' });
+  const name = el('input', { class: 'input', placeholder: 'Your name', autocomplete: 'name' });
+  const phone = el('input', { class: 'input mono', placeholder: '07XX 000 000', inputmode: 'tel' });
   const pass = el('input', { class: 'input', type: 'password', placeholder: 'At least 8 characters', autocomplete: 'new-password' });
   const problem = el('div', {});
   const button = el('button', { class: 'btn primary full', text: 'Create account' });
@@ -323,7 +357,7 @@ async function showVerify() {
       const data = await api('POST', '/api/auth/verify', { phone, code: code.value });
       state.user = data.user;
       state.pending = null;
-      toast('Welcome to Cissyweb2app');
+      toast('Welcome to CissyWeb2App');
       go('#/');
     } catch (error) {
       authError(problem, error.message);
@@ -373,7 +407,7 @@ async function showVerify() {
 }
 
 async function showLogin() {
-  const phone = el('input', { class: 'input mono', placeholder: '0772 000 000', inputmode: 'tel' });
+  const phone = el('input', { class: 'input mono', placeholder: '07XX 000 000', inputmode: 'tel' });
   const pass = el('input', { class: 'input', type: 'password', placeholder: 'Your password', autocomplete: 'current-password' });
   const problem = el('div', {});
   const button = el('button', { class: 'btn primary full', text: 'Log in' });
@@ -406,14 +440,14 @@ async function showLogin() {
 /* ── sidebar ─────────────────────────────────────────────────────────── */
 
 const SECTIONS = [
-  ['overview', 'Overview', '▣'],
-  ['identity', 'Identity', '⬚'],
-  ['webview', 'WebView', '◎'],
-  ['branding', 'Branding', '◈'],
-  ['features', 'Features', '⊞'],
-  ['offline', 'Offline', '☁'],
-  ['signing', 'Signing', '⚿'],
-  ['build', 'Build', '▶'],
+  ['overview', 'Overview', 'overview'],
+  ['identity', 'Identity', 'identity'],
+  ['webview', 'WebView', 'webview'],
+  ['branding', 'Branding', 'branding'],
+  ['features', 'Features', 'features'],
+  ['offline', 'Offline', 'offline'],
+  ['signing', 'Signing', 'signing'],
+  ['build', 'Build', 'build'],
 ];
 
 function planCard() {
@@ -466,18 +500,18 @@ function renderSidebar() {
   if (!state.app) {
     nav.append(el('div', { class: 'nav-group' }, [
       el('button', { class: 'nav-item' + (onBilling ? '' : ' active'), onclick: () => go('#/') }, [
-        el('span', { class: 'gl', text: '▦' }), 'All apps',
+        icon('apps'), 'All apps',
         el('span', { class: 'badge', text: String(state.apps.length) }),
       ]),
       el('button', { class: 'nav-item', onclick: newAppDialog }, [
-        el('span', { class: 'gl', text: '＋' }), 'New app',
+        icon('plus'), 'New app',
       ]),
       el('button', { class: 'nav-item' + (onBilling ? ' active' : ''), onclick: () => go('#/billing') }, [
-        el('span', { class: 'gl', text: '₵' }), 'Billing',
+        icon('billing'), 'Billing',
       ]),
       state.user && state.user.is_admin
         ? el('button', { class: 'nav-item', onclick: () => go('#/admin') }, [
-            el('span', { class: 'gl', text: '☰' }), 'Admin',
+            icon('admin'), 'Admin',
           ])
         : null,
     ]));
@@ -487,9 +521,9 @@ function renderSidebar() {
 
   nav.append(
     el('button', { class: 'appswitch', onclick: () => go('#/') }, [
-      el('span', { class: 'ico' }),
+      appIcon(state.app.name),
       el('span', { class: 'nm', text: state.app.name }),
-      el('span', { class: 'car', text: '⌄' }),
+      icon('chevron', 'car'),
     ]),
     el('div', { class: 'nav-group' }, [
       el('div', { class: 'nav-label', text: 'App' }),
@@ -500,7 +534,7 @@ function renderSidebar() {
             const target = document.getElementById('sec-' + id);
             if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
           },
-        }, [el('span', { class: 'gl', text: glyph }), label]),
+        }, [icon(glyph), label]),
       ),
     ]),
   );
@@ -538,7 +572,7 @@ async function showList() {
         ['App', 'Website', 'Version', 'Signing'].map((h) => el('th', { text: h })))]),
       el('tbody', {}, apps.map((app) =>
         el('tr', { class: 'row', onclick: () => go('#/app/' + app.id) }, [
-          el('td', {}, [el('span', { class: 'ico' }), el('span', { class: 'app-name', text: app.name })]),
+          el('td', {}, [appIcon(app.name), el('span', { class: 'app-name', text: app.name })]),
           el('td', { class: 'app-url mono', text: hostOf(app.website_url) }),
           el('td', {}, [
             el('div', { text: `v${app.version_name} (${app.version_code})` }),
@@ -1284,7 +1318,7 @@ async function showBilling() {
     ]));
   }
 
-  content.append(subscriptionCard(data.subscription));
+  content.append(subscriptionCard(data.user));
 
   content.append(
     el('h2', { class: 'sec', text: 'Plans' }),
@@ -1292,7 +1326,7 @@ async function showBilling() {
       el('div', { class: 'plan' }, [
         el('div', { class: 'plan-name', text: plan.name }),
         el('div', { class: 'plan-price', text: money(plan.amount) }),
-        el('div', { class: 'plan-blurb', text: plan.blurb + ' · per month' }),
+        el('div', { class: 'plan-blurb', text: plan.blurb }),
         el('button', {
           class: 'btn primary full',
           text: 'Pay with mobile money',
@@ -1320,18 +1354,25 @@ async function showBilling() {
   }
 }
 
-function subscriptionCard(subscription) {
-  if (!subscription || !subscription.active) {
+function subscriptionCard(user) {
+  if (!user) return el('div', {});
+  const left = `${user.builds_left} of ${user.builds_limit} builds left`;
+  if (user.plan === 'trial') {
     return el('div', { class: 'banner info' }, [
-      el('b', { text: 'No plan yet' }),
-      'Builds are unmetered while this is being built. A plan is what will ' +
-      'carry the build allowance once accounts exist.',
+      el('b', { text: 'Free trial' }),
+      `${left}. Pick a plan below when you need more — you pay from your phone ` +
+      'and the plan comes on as soon as the payment lands.',
+    ]);
+  }
+  if (user.plan_expired) {
+    return el('div', { class: 'banner warn' }, [
+      el('b', { text: 'Your plan has ended' }),
+      'Everything you built stays downloadable. Pay again below to keep building.',
     ]);
   }
   return el('div', { class: 'banner ok' }, [
-    el('b', { text: `${subscription.plan_name} — active` }),
-    `${subscription.builds} builds a month, until ${shortDate(subscription.until)}. ` +
-    `Paid under ${subscription.reference}.`,
+    el('b', { text: `${user.plan} — active` }),
+    `${left}` + (user.plan_until ? `, renews by ${shortDate(user.plan_until)}.` : '.'),
   ]);
 }
 
@@ -1343,7 +1384,7 @@ function paymentPill(status) {
 }
 
 function payDialog(plan, mode) {
-  const phone = el('input', { class: 'input mono', placeholder: '0772 000 000' });
+  const phone = el('input', { class: 'input mono', placeholder: '07XX 000 000' });
   const scenario = el('select', { class: 'input' }, [
     el('option', { value: 'approve', text: 'They approve it' }),
     el('option', { value: 'decline', text: 'They decline it' }),

@@ -90,5 +90,5 @@ def build_sender(settings: Settings | None = None) -> Any:
     return SmsSender(resolved) if resolved.live else DemoSms()
 
 
-def verification_message(code: str, minutes: int, app_name: str = "Cissyweb2app") -> str:
+def verification_message(code: str, minutes: int, app_name: str = "CissyWeb2App") -> str:
     return f"{code} is your {app_name} code. It expires in {minutes} minutes."

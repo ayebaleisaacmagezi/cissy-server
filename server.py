@@ -98,7 +98,7 @@ def main() -> int:
     httpd = serve(app, host, port)
 
     state = toolchain.probe()
-    print(f"Cissyweb2app {__version__} on http://{host}:{port}")
+    print(f"CissyWeb2App {__version__} on http://{host}:{port}")
     print(f"Toolchain: {state.summary}")
     print(f"Accounts: {app.accounts.count()}")
     if app.collecto_settings.live:

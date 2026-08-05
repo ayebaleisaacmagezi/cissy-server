@@ -1,1074 +1,770 @@
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Cissyweb2app — your website as an Android app</title>
-<style>
-  /* ─────────────────────────────────────────────────────────────────────
-     Palette. Near-black ground so the product's cyan reads as light rather
-     than paint. It is the same trick Apple uses to make one accent carry a
-     whole page. Cyan is taken from the running app, not invented here.
-     ───────────────────────────────────────────────────────────────────── */
-  :root {
-    --bg: #ffffff;
-    --bg-2: #f4fbfd;
-    --surface: rgba(255,255,255,.86);
-    --surface-2: rgba(9,32,42,.045);
-    --hair: rgba(9,32,42,.11);
-    --hair-2: rgba(9,32,42,.07);
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CissyWeb2App — your website as an Android app</title>
+  <style>
+    /* ───────────────────────────────────────────────────────────────────
+       The product's own cyan family, mapped onto this layout's roles.
+       Buttons carry the same gradient as the app so the two feel like
+       one product. System fonts on purpose: no external requests.
+       ─────────────────────────────────────────────────────────────────── */
+    :root {
+      --primary: #007a99;          /* the brand at a weight text can carry */
+      --primary-hover: #00657f;
+      --sky-light: #6ce2ff;
+      --sky-bg: #f2fbfe;
+      --sky-border: #a8eeff;
+      --sky-accent: #d6f7ff;
+      --dark: #0c1a21;
+      --muted: #4d6874;
+      --white: #ffffff;
+      --border: #dce8ed;
+      --shadow: 0 10px 25px -5px rgba(0, 148, 187, 0.1), 0 8px 10px -6px rgba(0, 148, 187, 0.05);
+      --radius: 12px;
+    }
 
-    --ink: #0c1a21;
-    --ink-2: #4d6874;
-    --ink-3: #7f97a2;
+    * { box-sizing: border-box; margin: 0; padding: 0; }
 
-    --accent: #00ccff;        /* fills, borders, the phone's own UI */
-    --accent-ink: #007a99;    /* the same brand at a weight text can carry */
-    --accent-2: #6ce2ff;
-    --accent-dim: rgba(0,204,255,.14);
-    --ok: #35c978;
-    --warn: #f0b84b;
+    body {
+      background: #f8fcfd;
+      color: var(--dark);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI",
+        Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.6;
+      overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
 
-    --r: 14px;
-    --r-lg: 22px;
+    a { text-decoration: none; color: inherit; }
+    .mono { font-family: "SF Mono", "Cascadia Mono", ui-monospace, Consolas, monospace; }
 
-    /* Apple's two spring parameters, kept as names so the JS and the CSS
-       agree about what "the default" means. */
-    --ease-out: cubic-bezier(.22,.61,.36,1);
-    --ease-in: cubic-bezier(.64,.04,.78,.39);
-  }
+    .container { max-width: 1240px; margin: 0 auto; padding: 0 20px; }
 
-  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    /* ── header ── */
+    header {
+      background: var(--white);
+      border-bottom: 1px solid var(--border);
+      position: sticky; top: 0; z-index: 1000;
+    }
+    .navbar {
+      display: flex; align-items: center; justify-content: space-between;
+      height: 68px;
+    }
+    .logo { font-size: 1.35rem; font-weight: 800; color: var(--primary); letter-spacing: -0.02em; }
+    .logo span { color: var(--dark); }
+    .nav-links {
+      display: flex; gap: 28px; list-style: none;
+      font-weight: 500; color: #33505c; font-size: 0.95rem;
+    }
+    .nav-links a:hover { color: var(--primary); }
+    .nav-btns { display: flex; gap: 12px; align-items: center; }
 
-  html { scroll-behavior: smooth; }
-  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+    .btn {
+      padding: 10px 22px; border-radius: 999px;
+      font: inherit; font-weight: 600; font-size: 0.9rem; cursor: pointer;
+      transition: all 0.2s ease; border: none;
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    }
+    .btn-text { background: transparent; color: var(--dark); }
+    .btn-text:hover { color: var(--primary); }
+    .btn-primary {
+      background: linear-gradient(180deg, #14d2ff, #00b6e6);
+      color: #00232e; font-weight: 700;
+      box-shadow: 0 4px 14px rgba(0, 182, 230, 0.35);
+    }
+    .btn-primary:hover { filter: brightness(1.06); }
+    .btn-secondary { background: var(--sky-accent); color: var(--primary); }
+    .btn-secondary:hover { background: var(--sky-border); }
 
-  body {
-    margin: 0;
-    background: var(--bg);
-    color: var(--ink);
-    font: 100%/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    -webkit-font-smoothing: antialiased;
-    text-rendering: optimizeLegibility;
-    overflow-x: hidden;
-  }
-  .mono { font-family: "SF Mono", "Cascadia Mono", ui-monospace, Consolas, monospace; }
+    /* ── hero ── */
+    .hero {
+      padding: 60px 0 40px; text-align: center;
+      background: linear-gradient(180deg, var(--sky-bg) 0%, #ffffff 100%);
+    }
+    .badge-bar {
+      display: inline-flex; flex-wrap: wrap; justify-content: center; gap: 15px;
+      background: var(--white); padding: 8px 22px; border-radius: 30px;
+      font-size: 0.85rem; font-weight: 500; color: var(--muted);
+      border: 1px solid var(--sky-border); margin-bottom: 25px;
+      box-shadow: 0 2px 8px rgba(0, 148, 187, 0.08);
+    }
+    .badge-bar strong { color: var(--primary); }
 
-  /* ── Type. Tracking is size-specific: large display tightens, body sits
-        near zero. One fixed letter-spacing would be wrong somewhere. ── */
-  h1, h2, h3 { margin: 0; font-weight: 700; }
-  .display {
-    font-size: clamp(2.6rem, 7.2vw, 5.6rem);
-    line-height: 1.02;
-    letter-spacing: -0.035em;
-    font-weight: 700;
-  }
-  .h2 {
-    font-size: clamp(1.9rem, 4.4vw, 3.2rem);
-    line-height: 1.08;
-    letter-spacing: -0.028em;
-  }
-  .h3 { font-size: 1.25rem; line-height: 1.25; letter-spacing: -0.015em; }
-  .lede {
-    font-size: clamp(1.02rem, 1.7vw, 1.3rem);
-    line-height: 1.5;
-    letter-spacing: -0.005em;
-    color: var(--ink-2);
-  }
-  .eyebrow {
-    font-size: .74rem; font-weight: 700; text-transform: uppercase;
-    letter-spacing: .14em; color: var(--accent-ink);
-  }
-  .grad {
-    background: linear-gradient(96deg, #00a8d6 0%, #00c2f5 52%, #2fbde0 100%);
-    -webkit-background-clip: text; background-clip: text; color: transparent;
-  }
+    .hero h1 { font-size: 2.6rem; font-weight: 800; margin-bottom: 10px; letter-spacing: -0.03em; }
+    .hero-subtitle { color: var(--muted); font-size: 1.05rem; margin-bottom: 35px; }
 
-  .wrap { width: min(1120px, 100% - 2.5rem); margin-inline: auto; }
+    .url-box {
+      max-width: 680px; margin: 0 auto 55px; display: flex;
+      background: var(--white); padding: 6px; border-radius: 50px;
+      box-shadow: var(--shadow); border: 2px solid var(--sky-border);
+    }
+    .url-box input {
+      flex: 1; border: none; outline: none; padding: 0 24px;
+      font: inherit; font-size: 1rem; border-radius: 50px; min-width: 0;
+    }
+    .url-box .btn { padding: 12px 28px; }
 
-  /* ─────────────────────────── nav ─────────────────────────── */
-  .nav {
-    position: fixed; inset: 0 0 auto 0; z-index: 60; height: 52px;
-    display: flex; align-items: center;
-    background: rgba(255,255,255,.68);
-    backdrop-filter: blur(22px) saturate(180%);
-    -webkit-backdrop-filter: blur(22px) saturate(180%);
-    /* A fade where content meets floating chrome, not a 1px rule. */
-    -webkit-mask-image: linear-gradient(#000 78%, rgba(0,0,0,.88) 100%);
-    mask-image: linear-gradient(#000 78%, rgba(0,0,0,.88) 100%);
-    transition: background 300ms var(--ease-out);
-  }
-  .nav::after {
-    content: ""; position: absolute; inset: auto 0 -14px 0; height: 14px;
-    background: linear-gradient(rgba(255,255,255,.72), transparent);
-    pointer-events: none;
-  }
-  .nav .wrap { display: flex; align-items: center; gap: 1.6rem; }
-  .brand { font-weight: 700; font-size: .95rem; letter-spacing: -.02em; }
-  .brand span { color: var(--accent-ink); }
-  .nav a {
-    color: var(--ink-2); text-decoration: none; font-size: .82rem;
-    letter-spacing: -.005em;
-  }
-  .nav a:hover { color: var(--ink); }
-  .nav .sp { flex: 1; }
-  @media (max-width: 620px) { .nav .hide-sm { display: none; } }
+    /* ── 3 steps ── */
+    .steps-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 25px;
+      margin-top: 10px; text-align: left;
+    }
+    .step-card {
+      background: var(--white); border-radius: var(--radius); padding: 28px;
+      border: 1px solid var(--border); box-shadow: var(--shadow);
+      display: flex; flex-direction: column; justify-content: space-between;
+    }
+    .step-header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+    .step-num {
+      width: 34px; height: 34px; flex: none;
+      background: linear-gradient(180deg, #14d2ff, #00b6e6); color: #00232e;
+      border-radius: 50%; display: flex; align-items: center; justify-content: center;
+      font-weight: 800; font-size: 0.95rem;
+    }
+    .step-card h3 { font-size: 1.15rem; font-weight: 700; }
+    .step-card p { font-size: 0.9rem; color: var(--muted); margin-bottom: 20px; }
 
-  /* ─────────────────────────── buttons ─────────────────────────── */
-  .btn {
-    appearance: none; border: 0; font: inherit; cursor: pointer;
-    text-decoration: none;
-    display: inline-flex; align-items: center; justify-content: center; gap: .5rem;
-    padding: .62rem 1.15rem; border-radius: 999px;
-    font-size: .88rem; font-weight: 600; letter-spacing: -.01em;
-    background: #fff; color: var(--ink);
-    border: 1px solid var(--hair);
-    box-shadow: 0 1px 2px rgba(9,32,42,.05);
-    /* Press feedback is instant and lives on pointer-down, never on click. */
-    transition: transform 110ms var(--ease-out), background 200ms var(--ease-out),
-                border-color 200ms var(--ease-out), opacity 200ms;
-    will-change: transform;
-  }
-  .btn:hover { background: #f3fafc; border-color: rgba(9,32,42,.18); }
-  .btn.pressed { transform: scale(.965); }
-  .btn.primary {
-    background: linear-gradient(180deg, #14d2ff, #00b6e6);
-    color: #00232e; border-color: transparent; font-weight: 700;
-    box-shadow: 0 6px 22px rgba(0,182,230,.34);
-  }
-  .btn.primary:hover { filter: brightness(1.06); }
-  .btn.lg { padding: .85rem 1.6rem; font-size: .98rem; }
-  .btn:disabled { opacity: .45; cursor: not-allowed; }
+    .mockup-window {
+      background: var(--sky-bg); border-radius: 10px;
+      border: 1px solid var(--sky-border); padding: 15px; text-align: center;
+    }
+    .mockup-input {
+      background: var(--white); border: 1px solid var(--border); border-radius: 6px;
+      padding: 8px 12px; font-size: 0.8rem; color: var(--muted);
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    .mockup-tabs { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; }
+    .mockup-tab {
+      background: var(--white); border: 1px solid var(--border);
+      padding: 4px 10px; border-radius: 4px; font-size: 0.75rem;
+      color: var(--primary); font-weight: 600;
+    }
 
-  /* ─────────────────────────── hero ─────────────────────────── */
-  .hero {
-    position: relative; padding: 9rem 0 4rem; overflow: visible;
-    min-height: 100svh; display: flex; align-items: center;
-  }
-  /* Two soft lights rather than a gradient wash. Depth without a moving
-     full-viewport background, which is a reduced-motion hazard. */
-  .hero::before, .hero::after {
-    content: ""; position: absolute; border-radius: 50%; pointer-events: none;
-    filter: blur(80px); opacity: .85;
-  }
-  .hero::before {
-    width: 60vw; height: 60vw; max-width: 780px; max-height: 780px;
-    top: -22%; left: 50%; transform: translateX(-30%);
-    background: radial-gradient(closest-side, rgba(0,204,255,.30), transparent 72%);
-  }
-  .hero::after {
-    width: 44vw; height: 44vw; max-width: 560px; max-height: 560px;
-    bottom: -18%; left: -8%;
-    background: radial-gradient(closest-side, rgba(0,168,214,.14), transparent 72%);
-  }
-  .hero .wrap {
-    position: relative; z-index: 1;
-    display: grid; grid-template-columns: 1.06fr .94fr; gap: 3rem; align-items: center;
-  }
-  @media (max-width: 900px) {
-    .hero { min-height: auto; padding: 7rem 0 3rem; }
-    .hero .wrap { grid-template-columns: 1fr; gap: 2.4rem; }
-  }
-  .hero h1 { margin-bottom: 1.1rem; }
-  .hero .lede { max-width: 30ch; margin: 0 0 1.9rem; }
-  .hero-ctas { display: flex; gap: .7rem; flex-wrap: wrap; align-items: center; }
-  .hero-sub { margin-top: 1.1rem; font-size: .8rem; color: var(--ink-3); letter-spacing: -.005em; }
+    /* step 2: the live build log, which is the real experience */
+    .mockup-console {
+      background: #0b161c; border-radius: 10px; padding: 14px 16px;
+      text-align: left; font-size: 0.72rem; line-height: 1.8;
+      border: 1px solid rgba(0, 204, 255, 0.18);
+    }
+    .mockup-console div { color: #c4d6de; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .mockup-console .c-cmd { color: #ffffff; font-weight: 600; }
+    .mockup-console .c-ok { color: #6fe3a0; }
 
-  /* ─────────────────────────── the phone ─────────────────────────── */
-  .stage {
-    display: grid; place-items: center; perspective: 1400px;
-    min-height: 520px; touch-action: none;
-  }
-  .phone-wrap { transform-style: preserve-3d; will-change: transform; cursor: grab; }
-  .phone-wrap.grabbing { cursor: grabbing; }
-  .phone {
-    position: relative; width: 268px; height: 552px; border-radius: 44px;
-    background: linear-gradient(160deg, #2b3339, #10161a 42%, #05080a);
-    padding: 9px;
-    box-shadow:
-      0 2px 0 rgba(255,255,255,.10) inset,
-      0 44px 90px -22px rgba(0,0,0,.86),
-      0 0 0 1px rgba(255,255,255,.055);
-  }
-  .phone-screen {
-    position: relative; width: 100%; height: 100%; border-radius: 36px;
-    overflow: hidden; background: #fff; color: #16242b;
-    display: flex; flex-direction: column;
-  }
-  .notch {
-    position: absolute; top: 9px; left: 50%; transform: translateX(-50%);
-    width: 88px; height: 24px; border-radius: 999px; background: #0b1216; z-index: 5;
-  }
-  .status {
-    display: flex; align-items: center; padding: 12px 18px 0;
-    font-size: 10.5px; font-weight: 600; color: #16242b; letter-spacing: -.01em;
-  }
-  .status .sp { flex: 1; }
-  /* Everything below is the mock *website*, not app chrome. The generated
-     app adds no bar of its own, so neither does this. */
-  .site { flex: 1; overflow: hidden; background: #fbfdfe; display: flex; flex-direction: column; }
-  .site-nav {
-    display: flex; align-items: center; gap: 9px; padding: 13px 16px;
-    font-weight: 700; font-size: 13.5px; letter-spacing: -.015em; color: #fff;
-    transition: background 420ms var(--ease-out);
-  }
-  .site-mark {
-    width: 21px; height: 21px; border-radius: 6px; flex: none;
-    display: grid; place-items: center; font-size: 9px; font-weight: 800;
-    background: rgba(255,255,255,.26); color: #fff;
-  }
-  .site-body { padding: 14px 16px 18px; }
-  .site-hero {
-    height: 118px; display: grid; place-items: center; text-align: center;
-    padding: 0 16px; transition: background 420ms var(--ease-out);
-  }
-  .site-hero b { font-size: 15px; letter-spacing: -.02em; color: #fff; }
-  .skel { border-radius: 6px; background: #e8eff2; height: 9px; margin-bottom: 9px; }
-  .skel:first-child { margin-top: 2px; }
-  .skel.s2 { width: 78%; } .skel.s3 { width: 55%; }
-  .site-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-top: 14px; }
-  .site-card { border-radius: 10px; background: #eef5f8; height: 62px; }
-  .grab-hint {
-    margin-top: 1.15rem; text-align: center; font-size: .74rem; color: var(--ink-3);
-    letter-spacing: .01em; transition: opacity 400ms var(--ease-out);
-  }
+    .artifact-chips { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-top: 10px; }
+    .artifact-chip {
+      background: var(--white); border: 1px solid var(--sky-border);
+      padding: 5px 12px; border-radius: 999px;
+      font-size: 0.75rem; font-weight: 700; color: var(--primary);
+    }
 
-  /* ─────────────────────────── the builder ─────────────────────────── */
-  .build-grid { grid-template-columns: 1fr 1fr; }
-  .build-grid > .panel { display: flex; flex-direction: column; }
-  #buildBtn { margin-top: auto; }
-  @media (max-width: 820px) { .build-grid { grid-template-columns: 1fr !important; } }
+    /* ── CTA banner ── */
+    .cta-banner {
+      background: linear-gradient(135deg, #00a8d6 0%, #007a99 100%);
+      color: var(--white); border-radius: 16px; padding: 35px 40px; margin: 50px 0;
+      display: flex; align-items: center; justify-content: space-between;
+      box-shadow: var(--shadow); gap: 20px;
+    }
+    .cta-banner h2 { font-size: 1.7rem; font-weight: 700; margin-bottom: 6px; letter-spacing: -0.02em; }
+    .cta-banner p { opacity: 0.9; font-size: 0.95rem; }
+    .cta-actions { display: flex; gap: 12px; flex: none; }
+    .btn-white { background: var(--white); color: var(--primary); font-weight: 700; }
+    .btn-white:hover { background: var(--sky-accent); }
+    .btn-outline-white { border: 1px solid var(--white); color: var(--white); background: transparent; }
+    .btn-outline-white:hover { background: rgba(255, 255, 255, 0.15); }
 
-  .panel {
-    background: #fff; border: 1px solid var(--hair);
-    border-radius: var(--r-lg); padding: 1.4rem;
-    box-shadow: 0 1px 2px rgba(9,32,42,.05), 0 18px 40px -26px rgba(9,32,42,.28);
-  }
-  .field { margin-bottom: .9rem; }
-  .field label {
-    display: block; font-size: .72rem; font-weight: 600; color: var(--ink-3);
-    text-transform: uppercase; letter-spacing: .1em; margin-bottom: .4rem;
-  }
-  .input {
-    width: 100%; padding: .68rem .85rem; font: inherit; font-size: .92rem;
-    color: var(--ink); background: #f6fbfd;
-    border: 1px solid var(--hair); border-radius: 11px;
-    transition: border-color 180ms var(--ease-out), box-shadow 180ms var(--ease-out);
-  }
-  .input:focus {
-    outline: 0; border-color: var(--accent); background: #fff;
-    box-shadow: 0 0 0 3px rgba(0,204,255,.20);
-  }
-  .input::placeholder { color: var(--ink-3); }
+    /* ── features ── */
+    .section-header { text-align: center; margin-bottom: 40px; }
+    .section-header h2 { font-size: 2rem; font-weight: 700; margin-bottom: 10px; letter-spacing: -0.02em; }
+    .section-header p { color: var(--muted); font-size: 1rem; }
 
-  /* ─────────────────────────── build console ─────────────────────────── */
-  .console {
-    background: #071319; border: 1px solid rgba(9,32,42,.16); border-radius: 12px;
-    padding: .8rem .9rem; font-size: 11.5px; line-height: 1.75;
-    height: 176px; overflow: hidden; position: relative;
-    -webkit-mask-image: linear-gradient(transparent, #000 16%, #000 100%);
-    mask-image: linear-gradient(transparent, #000 16%, #000 100%);
-  }
-  .console .l { color: #93a8b3; white-space: pre-wrap; word-break: break-word; }
-  .console .l.g { color: #6fe3a0; } .console .l.c { color: var(--accent-2); }
-  .console .l.w { color: #fff; font-weight: 600; }
-  .meter { height: 4px; border-radius: 3px; background: rgba(9,32,42,.10); overflow: hidden; margin: .85rem 0 .55rem; }
-  .meter i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
-  .meter-row { display: flex; justify-content: space-between; font-size: .74rem; color: var(--ink-3); }
+    .features-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
+    .feature-card {
+      background: var(--white); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 24px; transition: all 0.25s ease;
+    }
+    .feature-card:hover {
+      border-color: var(--sky-light); transform: translateY(-4px); box-shadow: var(--shadow);
+    }
+    .feature-icon-box {
+      width: 46px; height: 46px; background: var(--sky-accent); color: var(--primary);
+      border-radius: 10px; display: flex; align-items: center; justify-content: center;
+      margin-bottom: 16px;
+    }
+    .feature-icon-box svg { width: 22px; height: 22px; }
+    .inline-ic { width: 15px; height: 15px; vertical-align: -2px; flex: none; }
+    .feature-card h4 { font-size: 1.05rem; font-weight: 700; margin-bottom: 8px; }
+    .feature-card p { font-size: 0.85rem; color: var(--muted); }
 
-  /* ─────────────────────────── sections ─────────────────────────── */
-  section { position: relative; padding: 7rem 0; }
-  #how, #pricing { background: var(--bg-2); }
-  #how::before, #pricing::before {
-    content: ""; position: absolute; inset: 0; pointer-events: none;
-    box-shadow: inset 0 1px 0 var(--hair-2), inset 0 -1px 0 var(--hair-2);
-  }
-  .sec-head { max-width: 42ch; margin-bottom: 2.6rem; }
-  .sec-head .h2 { margin: .6rem 0 .9rem; }
+    /* ── pricing ── */
+    .pricing-wrapper {
+      background: var(--sky-bg); padding: 60px 0; margin-top: 60px;
+      border-top: 1px solid var(--sky-border); border-bottom: 1px solid var(--sky-border);
+    }
+    .pricing-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+    .price-card {
+      background: var(--white); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 28px; position: relative;
+      display: flex; flex-direction: column;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.02);
+    }
+    .price-card.featured { border-color: var(--sky-light); box-shadow: var(--shadow); }
+    .price-badge {
+      position: absolute; top: 20px; right: 20px;
+      background: var(--sky-accent); color: var(--primary);
+      font-size: 0.75rem; font-weight: 700; padding: 4px 10px; border-radius: 20px;
+    }
+    .price-name {
+      font-size: 0.8rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.08em; color: var(--primary); margin-bottom: 10px;
+    }
+    .price-amount { font-size: 1.9rem; font-weight: 800; letter-spacing: -0.03em; }
+    .price-per { font-size: 0.85rem; color: var(--muted); margin-bottom: 18px; }
+    .price-list { list-style: none; margin-bottom: 24px; font-size: 0.9rem; display: grid; gap: 8px; }
+    .price-list li::before { content: "✓ "; color: var(--primary); font-weight: 700; }
+    .price-card .btn { margin-top: auto; }
+    .pricing-note { text-align: center; color: var(--muted); font-size: 0.85rem; margin-top: 25px; }
 
-  /* Scroll reveal. A transition, not a gesture, so CSS is fine here. */
-  .rise { opacity: 0; transform: translateY(26px); }
-  .rise.in {
-    opacity: 1; transform: none;
-    transition: opacity 700ms var(--ease-out), transform 700ms var(--ease-out);
-  }
-  .rise.d1.in { transition-delay: 70ms; }
-  .rise.d2.in { transition-delay: 140ms; }
-  .rise.d3.in { transition-delay: 210ms; }
+    /* ── iOS, honestly ── */
+    .ios-section { padding: 70px 0; }
+    .ios-container {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: center;
+    }
+    .ios-editor {
+      background: #0b161c; color: #6ce2ff; border-radius: var(--radius);
+      padding: 24px; font-family: "SF Mono", "Cascadia Mono", ui-monospace, Consolas, monospace;
+      font-size: 0.85rem; box-shadow: var(--shadow); line-height: 1.8;
+    }
+    .ios-editor .comment { color: #64748b; }
+    .ios-editor .cmd { color: #ffffff; }
+    .ios-desc h3 { font-size: 1.8rem; font-weight: 700; margin-bottom: 12px; letter-spacing: -0.02em; }
+    .ios-desc p { color: var(--muted); margin-bottom: 20px; font-size: 0.95rem; }
 
-  /* ─────────────────────────── carousel ─────────────────────────── */
-  .rail-outer { overflow: hidden; touch-action: pan-y; cursor: grab; }
-  .rail-outer.grabbing { cursor: grabbing; }
-  .rail { display: flex; gap: 1rem; will-change: transform; padding-bottom: .4rem; }
-  .card {
-    flex: 0 0 300px; min-height: 250px; border-radius: var(--r-lg);
-    background: #fff;
-    border: 1px solid var(--hair); padding: 1.5rem;
-    box-shadow: 0 1px 2px rgba(9,32,42,.05), 0 16px 34px -26px rgba(9,32,42,.26);
-    display: flex; flex-direction: column;
-  }
-  .card .gl {
-    width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center;
-    background: rgba(0,204,255,.13); color: var(--accent-ink); font-size: 18px;
-    margin-bottom: 1.1rem;
-  }
-  .card h3 { margin-bottom: .5rem; }
-  .card p { margin: 0; font-size: .88rem; color: var(--ink-2); line-height: 1.55; }
-  .card .foot { margin-top: auto; padding-top: 1.1rem; font-size: .74rem; color: var(--ink-3); }
-  .dots { display: flex; gap: .4rem; margin-top: 1.4rem; }
-  .dots button {
-    width: 7px; height: 7px; padding: 0; border: 0; border-radius: 50%;
-    background: rgba(9,32,42,.16); cursor: pointer;
-    transition: background 240ms var(--ease-out), width 240ms var(--ease-out);
-  }
-  .dots button[aria-current="true"] { background: var(--accent-ink); width: 22px; border-radius: 4px; }
+    /* ── FAQ ── */
+    .faq-section {
+      padding: 70px 0; background: var(--sky-bg); border-top: 1px solid var(--sky-border);
+    }
+    .faq-container { max-width: 820px; margin: 0 auto; display: flex; flex-direction: column; gap: 15px; }
+    .faq-item {
+      background: var(--white); border: 1px solid var(--border);
+      border-radius: 10px; overflow: hidden;
+    }
+    .faq-question {
+      padding: 20px 24px; font-weight: 600; display: flex;
+      justify-content: space-between; align-items: center; gap: 14px;
+      cursor: pointer; font-size: 1rem;
+    }
+    .faq-answer { padding: 0 24px 20px; color: var(--muted); font-size: 0.9rem; display: none; }
+    .faq-item.active .faq-answer { display: block; }
+    .faq-item.active .faq-toggle { transform: rotate(45deg); }
+    .faq-toggle { font-size: 1.2rem; transition: transform 0.2s; color: var(--primary); flex: none; }
 
-  /* ─────────────────────────── pricing ─────────────────────────── */
-  .prices { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem; }
-  .price {
-    border: 1px solid var(--hair); border-radius: var(--r-lg); padding: 1.6rem;
-    background: #fff; display: flex; flex-direction: column;
-    box-shadow: 0 1px 2px rgba(9,32,42,.05), 0 16px 34px -26px rgba(9,32,42,.26);
-  }
-  .price.pick {
-    border-color: rgba(0,182,230,.5);
-    background: linear-gradient(168deg, rgba(0,204,255,.09), #fff 62%);
-    box-shadow: 0 1px 2px rgba(9,32,42,.05), 0 22px 46px -26px rgba(0,150,190,.4);
-  }
-  .price .nm { font-size: .74rem; font-weight: 700; text-transform: uppercase; letter-spacing: .12em; color: var(--ink-3); }
-  .price .amt { font-size: 2.1rem; font-weight: 700; letter-spacing: -.03em; margin: .5rem 0 .1rem; }
-  .price .per { font-size: .8rem; color: var(--ink-3); margin-bottom: 1.1rem; }
-  .price ul { list-style: none; margin: 0 0 1.4rem; padding: 0; font-size: .87rem; color: var(--ink-2); }
-  .price li { padding: .34rem 0 .34rem 1.35rem; position: relative; }
-  .price li::before { content: "✓"; position: absolute; left: 0; color: var(--accent-ink); font-size: .82rem; }
-  .price .btn { margin-top: auto; }
+    /* ── footer ── */
+    footer {
+      background: #071b24; color: #8aa0ab; padding: 70px 0 30px;
+      font-size: 0.9rem; position: relative; overflow: hidden;
+    }
+    .footer-watermark {
+      position: absolute; bottom: 0; left: 50%; transform: translateX(-50%);
+      font-size: 9rem; font-weight: 900; color: rgba(255, 255, 255, 0.02);
+      letter-spacing: 10px; white-space: nowrap; pointer-events: none; user-select: none;
+    }
+    .footer-grid {
+      display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 30px;
+      margin-bottom: 50px; position: relative; z-index: 2;
+    }
+    .footer-col h5 { color: var(--white); font-size: 1rem; margin-bottom: 18px; font-weight: 700; }
+    .footer-col ul { list-style: none; display: flex; flex-direction: column; gap: 10px; }
+    .footer-col ul a { color: #8aa0ab; }
+    .footer-col ul a:hover { color: var(--sky-light); }
+    .footer-bottom {
+      border-top: 1px solid #12303c; padding-top: 25px;
+      display: flex; justify-content: space-between; align-items: center; gap: 10px;
+      position: relative; z-index: 2; font-size: 0.85rem; flex-wrap: wrap;
+    }
 
-  /* ─────────────────────────── final ─────────────────────────── */
-  .final { text-align: center; padding: 8rem 0 6rem; }
-  .final .h2 { margin-bottom: 1rem; }
-  .final .lede { margin: 0 auto 2rem; max-width: 44ch; }
-  footer {
-    border-top: 1px solid var(--hair-2); padding: 2.2rem 0;
-    font-size: .78rem; color: var(--ink-3);
-    display: flex; gap: 1.4rem; flex-wrap: wrap; align-items: center;
-  }
-  footer .sp { flex: 1; }
+    /* ── animate on scroll ─────────────────────────────────────────────
+       Classes are added by the script below, so with JS off (or reduced
+       motion on) everything is simply visible. Elements clean their
+       reveal classes off after arriving, so hover transitions on cards
+       are not slowed down afterwards. ── */
+    .reveal {
+      opacity: 0; transform: translateY(26px);
+      transition: opacity 0.7s cubic-bezier(0.22, 0.61, 0.36, 1),
+        transform 0.7s cubic-bezier(0.22, 0.61, 0.36, 1);
+      will-change: opacity, transform;
+    }
+    .reveal-left { transform: translateX(-36px); }
+    .reveal-right { transform: translateX(36px); }
+    .reveal-pop { transform: translateY(26px) scale(0.96); }
+    .reveal.in { opacity: 1; transform: none; }
 
+    /* the build log types itself when it scrolls into view */
+    .mockup-console.typing div { visibility: hidden; }
+    .mockup-console.typing div.on { visibility: visible; }
+    .mockup-console.typing div.cursor::after {
+      content: "▋"; color: var(--sky-light); margin-left: 3px;
+      animation: blink 0.9s steps(1) infinite;
+    }
+    @keyframes blink { 50% { opacity: 0; } }
 
-  /* ─────────────────────────── accessibility ─────────────────────────── */
-  @media (prefers-reduced-motion: reduce) {
-    .rise { opacity: 1; transform: none; }
-    .rise.in { transition: none; }
-    .btn { transition: background 200ms, border-color 200ms; }
-    .btn.pressed { transform: none; opacity: .72; }
-  }
-  @media (prefers-reduced-transparency: reduce) {
-    .nav { background: #fff; backdrop-filter: none; -webkit-backdrop-filter: none; }
-  }
-  @media (prefers-contrast: more) {
-    :root { --ink-2: #33505c; --ink-3: #476470; --hair: rgba(9,32,42,.34); }
-    .card, .price, .panel, .note { background: #fff; box-shadow: none; }
-  }
-  :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
-</style>
+    /* the header lifts once the page starts moving */
+    header { transition: box-shadow 0.25s ease; }
+    header.scrolled { box-shadow: 0 6px 24px -8px rgba(0, 148, 187, 0.18); }
 
-<nav class="nav" id="nav">
-  <div class="wrap">
-    <span class="brand">Cissy<span>web2app</span></span>
-    <span class="sp"></span>
-    <a href="#how" class="hide-sm">How it works</a>
-    <a href="#features" class="hide-sm">Features</a>
-    <a href="#pricing" class="hide-sm">Pricing</a>
-    <a class="btn" data-press href="/app#/login">Log in</a>
-    <a class="btn primary" data-press href="/app#/signup">Start free</a>
-  </div>
-</nav>
+    /* ── responsive ── */
+    @media (max-width: 992px) {
+      .steps-grid, .pricing-grid { grid-template-columns: 1fr; }
+      .features-grid { grid-template-columns: repeat(2, 1fr); }
+      .ios-container { grid-template-columns: 1fr; }
+      .footer-grid { grid-template-columns: 1fr 1fr; }
+    }
+    @media (max-width: 600px) {
+      .hero h1 { font-size: 2rem; }
+      .features-grid { grid-template-columns: 1fr; }
+      .nav-links { display: none; }
+      .cta-banner { flex-direction: column; text-align: center; }
+      .url-box { flex-direction: column; border-radius: 20px; gap: 6px; }
+      .url-box input { padding: 12px 18px; }
+    }
 
-<main>
+    @media (prefers-reduced-motion: reduce) {
+      * { transition-duration: 0.01ms !important; }
+    }
+  </style>
+</head>
+<body>
 
-  <!-- ══════════════════ hero ══════════════════ -->
-  <section class="hero">
-    <div class="wrap">
-      <div>
-        <p class="eyebrow">Websites become apps</p>
-        <h1 class="display">
-          Your website.<br>On the <span class="grad">home screen</span>.
-        </h1>
-        <p class="lede">
-          Paste a web address. Get a real Android app, signed and ready for
-          Google Play. No Android Studio. No Mac. Nothing to install.
-        </p>
-        <div class="hero-ctas">
-          <a class="btn primary lg" data-press href="/app#/signup">Build my app free</a>
-          <button class="btn lg" data-press data-scroll="#features">See how it works</button>
-        </div>
-        <p class="hero-sub">
-          No card needed · Your first 3 builds are free · Built in about five minutes
-        </p>
+  <!-- header -->
+  <header>
+    <div class="container navbar">
+      <a href="/" class="logo">Cissy<span>Web2App</span></a>
+      <ul class="nav-links">
+        <li><a href="#how">How it works</a></li>
+        <li><a href="#features">Features</a></li>
+        <li><a href="#pricing">Pricing</a></li>
+        <li><a href="#faq">FAQ</a></li>
+      </ul>
+      <div class="nav-btns">
+        <a href="/app" class="btn btn-text">Log in</a>
+        <a href="/app#/signup" class="btn btn-primary">Start free</a>
+      </div>
+    </div>
+  </header>
+
+  <!-- hero -->
+  <section class="hero" id="how">
+    <div class="container">
+      <div class="badge-bar">
+        <span><strong>3 free builds</strong> to try it</span>
+        <span>• No card needed</span>
+        <span>• Pay by mobile money</span>
       </div>
 
-      <!-- The phone is the demo, not a picture of one. Grab it. -->
-      <div class="stage" id="stage">
-        <div>
-          <div class="phone-wrap" id="phoneWrap">
-            <div class="phone">
-              <div class="notch"></div>
-              <div class="phone-screen">
-                <div class="status">
-                  <span>9:41</span><span class="sp"></span><span style="letter-spacing:.12em">▮▮▮ ⌁ ▰</span>
-                </div>
-                <!-- No app bar and no tab bar, because the real generated
-                     app has neither. It is a full-screen WebView, so every
-                     pixel below the status bar belongs to the website. -->
-                <div class="site">
-                  <div class="site-nav" id="siteNav">
-                    <span class="site-mark" id="siteMark">CP</span>
-                    <span id="siteName">Cissytech Portal</span>
-                  </div>
-                  <div class="site-hero" id="siteHero"><b id="siteHost">portal.cissytech.com</b></div>
-                  <div class="site-body">
-                    <div class="skel"></div>
-                    <div class="skel s2"></div>
-                    <div class="skel s3"></div>
-                    <div class="site-cards">
-                      <div class="site-card"></div><div class="site-card"></div>
-                    </div>
-                  </div>
-                </div>
-              </div>
+      <h1>Your website as an Android app,<br>in three steps</h1>
+      <p class="hero-subtitle">Enter a URL, press Build, download a signed APK or AAB. The app shows your live site, so it is always up to date.</p>
+
+      <form class="url-box" action="/app" onsubmit="location.href='/app#/signup'; return false;">
+        <input type="url" placeholder="https://yourwebsite.com" aria-label="Your website URL">
+        <button type="submit" class="btn btn-primary">Build your app</button>
+      </form>
+
+      <div class="steps-grid">
+        <div class="step-card">
+          <div>
+            <div class="step-header">
+              <div class="step-num">1</div>
+              <h3>Enter your website URL</h3>
+            </div>
+            <p>Name the app, upload an icon and a splash image, and choose how it should behave.</p>
+          </div>
+          <div class="mockup-window">
+            <div class="mockup-input">
+              <span style="display:inline-flex;align-items:center;gap:6px"><svg class="inline-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>https://yourwebsite.com</span>
+              <svg class="inline-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+            </div>
+            <div class="mockup-tabs">
+              <span class="mockup-tab">+ Icon</span>
+              <span class="mockup-tab">+ Splash</span>
+              <span class="mockup-tab">+ Features</span>
             </div>
           </div>
-          <p class="grab-hint" id="grabHint">
-            No address bar. No browser buttons. Just your site.<br>
-            <span style="opacity:.7">Drag the phone. Throw it. It comes back.</span></p>
         </div>
-      </div>
-    </div>
-  </section>
 
-  <!-- ══════════════════ the builder ══════════════════ -->
-  <section id="how">
-    <div class="wrap">
-      <div class="sec-head rise">
-        <p class="eyebrow">Try it here</p>
-        <h2 class="h2">Type an address.<br>Watch it become an app.</h2>
-        <p class="lede">Everything on the left is live. The phone above changes as
-          you type. Then press Build and watch the real thing happen.</p>
-      </div>
-
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem" class="build-grid">
-        <div class="panel rise d1">
-          <div class="field">
-            <label for="url">Website address</label>
-            <input class="input mono" id="url" value="https://portal.cissytech.com" spellcheck="false">
+        <div class="step-card">
+          <div>
+            <div class="step-header">
+              <div class="step-num">2</div>
+              <h3>Build and watch it live</h3>
+            </div>
+            <p>The build runs on our server and streams its log to your browser as it goes.</p>
           </div>
-          <div class="field" style="margin-bottom:1.3rem">
-            <label for="name">App name</label>
-            <input class="input" id="name" value="Cissytech Portal" maxlength="24">
+          <div class="mockup-console mono">
+            <div class="c-cmd">$ flutter build appbundle</div>
+            <div>Running Gradle task 'bundleRelease'...</div>
+            <div class="c-ok">✓ Built app-release.aab (28.4 MB)</div>
+            <div class="c-ok">Done in 292s</div>
           </div>
-          <button class="btn primary" id="buildBtn" data-press style="width:100%">Build my app</button>
         </div>
 
-        <div class="panel rise d2">
-          <div class="console" id="console">
-            <div class="l">Ready when you are.</div>
+        <div class="step-card">
+          <div>
+            <div class="step-header">
+              <div class="step-num">3</div>
+              <h3>Download and publish</h3>
+            </div>
+            <p>A signed AAB for Google Play, APKs for installing directly — and the full project for iOS.</p>
           </div>
-          <div class="meter"><i id="meterFill"></i></div>
-          <div class="meter-row">
-            <span id="meterLabel">Not started</span>
-            <span id="meterPct">0%</span>
+          <div class="mockup-window" style="background: var(--sky-accent); border-color: var(--sky-light);">
+            <strong style="color: var(--primary); font-size: 0.85rem;">Ready to download</strong>
+            <div class="artifact-chips">
+              <span class="artifact-chip">AAB</span>
+              <span class="artifact-chip">APK</span>
+              <span class="artifact-chip">iOS project .zip</span>
+            </div>
           </div>
-          <button class="btn" id="dlBtn" data-press disabled style="width:100%;margin-top:1rem">
-            Download APK
-          </button>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- ══════════════════ features ══════════════════ -->
-  <section id="features">
-    <div class="wrap">
-      <div class="sec-head rise">
-        <p class="eyebrow">What you get</p>
-        <h2 class="h2">A real app. Not a bookmark.</h2>
-        <p class="lede">Drag the row. Flick it. It carries momentum and stops
-          where you threw it.</p>
+  <!-- CTA banner -->
+  <div class="container">
+    <div class="cta-banner">
+      <div>
+        <h2>Turn your website into an app today</h2>
+        <p>Three builds are free, and you sign up with just a phone number.</p>
+      </div>
+      <div class="cta-actions">
+        <a href="/app#/signup" class="btn btn-white">Start free</a>
+        <a href="#pricing" class="btn btn-outline-white">See pricing</a>
       </div>
     </div>
-
-    <div class="wrap">
-      <div class="rail-outer" id="railOuter">
-        <div class="rail" id="rail">
-          <article class="card">
-            <div class="gl">⚿</div>
-            <h3 class="h3">Signed for Google Play</h3>
-            <p>Upload your keystore once and every build comes out signed and
-              ready to publish. The passwords are never stored.</p>
-            <div class="foot">APK and AAB</div>
-          </article>
-          <article class="card">
-            <div class="gl">◎</div>
-            <h3 class="h3">Camera, files, location</h3>
-            <p>Tick what your site is allowed to use. The permissions and the
-              wording Apple and Google ask for are written for you.</p>
-            <div class="foot">Only what you enable</div>
-          </article>
-          <article class="card">
-            <div class="gl">◈</div>
-            <h3 class="h3">The iPhone half, too</h3>
-            <p>Apple's tools only run on a Mac, so we hand you the complete
-              project as a zip. Open it in Xcode and press play.</p>
-            <div class="foot">Xcode-ready</div>
-          </article>
-          <article class="card">
-            <div class="gl">☁</div>
-            <h3 class="h3">Works without signal</h3>
-            <p>A proper offline screen instead of the browser's dinosaur, and
-              it reconnects on its own when the network returns.</p>
-            <div class="foot">Built in</div>
-          </article>
-          <article class="card">
-            <div class="gl">▶</div>
-            <h3 class="h3">Watch it build</h3>
-            <p>The real log, streaming live. When something fails you get the
-              reason in a sentence, not a stack trace.</p>
-            <div class="foot">About five minutes</div>
-          </article>
-        </div>
-      </div>
-      <div class="dots" id="dots" role="tablist" aria-label="Features"></div>
-    </div>
-  </section>
-
-  <!-- ══════════════════ pricing ══════════════════ -->
-  <section id="pricing">
-    <div class="wrap">
-      <div class="sec-head rise">
-        <p class="eyebrow">Pricing</p>
-        <h2 class="h2">Try it before you pay.</h2>
-        <p class="lede">Three builds free, no card. Pay by mobile money when you
-          are ready. A prompt arrives on your phone.</p>
-      </div>
-
-      <div class="prices">
-        <div class="price rise">
-          <span class="nm">Free</span>
-          <div class="amt">UGX 0</div>
-          <div class="per">to try it</div>
-          <ul><li>3 builds</li><li>1 app</li><li>Signed APK</li><li>iPhone project</li></ul>
-          <a class="btn" data-press href="/app#/signup">Start free</a>
-        </div>
-        <div class="price pick rise d1">
-          <span class="nm">Starter</span>
-          <div class="amt">UGX 19,000</div>
-          <div class="per">per month · about $5</div>
-          <ul><li>25 builds a month</li><li>5 apps</li><li>Builds start sooner</li><li>Artifacts kept 30 days</li></ul>
-          <a class="btn primary" data-press href="/app#/signup">Choose Starter</a>
-        </div>
-        <div class="price rise d2">
-          <span class="nm">Business</span>
-          <div class="amt">UGX 57,000</div>
-          <div class="per">per month · about $15</div>
-          <ul><li>100 builds a month</li><li>Unlimited apps</li><li>Builds start first</li><li>Artifacts kept 90 days</li></ul>
-          <a class="btn" data-press href="/app#/signup">Choose Business</a>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ══════════════════ final ══════════════════ -->
-  <section class="final">
-    <div class="wrap">
-      <h2 class="h2 rise">Five minutes from now,<br>it could be on your phone.</h2>
-      <p class="lede rise d1">No card. No install. Nothing to learn.</p>
-      <div class="rise d2"><a class="btn primary lg" data-press href="/app#/signup">Build my app free</a></div>
-    </div>
-  </section>
-
-  <div class="wrap">
-    <footer>
-      <span class="brand">Cissy<span>web2app</span></span>
-      <span class="sp"></span>
-      <span>web2app.cissytech.com</span>
-      <span>Made by Cissytech</span>
-    </footer>
   </div>
 
-</main>
+  <!-- features -->
+  <section class="container" id="features" style="padding: 30px 20px;">
+    <div class="section-header">
+      <h2>Everything the app needs, built in</h2>
+      <p>Every feature here ships in the app you download — switch each one on or off per app.</p>
+    </div>
 
-<script>
-'use strict';
-/* ═══════════════════════════════════════════════════════════════════════
-   A tiny spring engine, written rather than imported. No CDN, and the
-   parameters stay the two Apple designers actually reason with:
+    <!-- Icons: Lucide (lucide.dev), ISC licence — free for commercial use. -->
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feature-icon-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></svg></div>
+        <h4>Your icon and splash screen</h4>
+        <p>Upload once and the launcher icons and splash are generated for every screen size.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h.01"/><path d="M8.5 16.429a5 5 0 0 1 7 0"/><path d="M5 12.859a10 10 0 0 1 5.17-2.69"/><path d="M19 12.859a10 10 0 0 0-2.007-1.523"/><path d="M2 8.82a15 15 0 0 1 4.177-2.643"/><path d="M22 8.82a15 15 0 0 0-11.288-3.764"/><path d="m2 2 20 20"/></svg></div>
+        <h4>Offline screen</h4>
+        <p>When the connection drops, users see a branded screen with Try again — not a browser error.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></div>
+        <h4>Deep links</h4>
+        <p>Links to your domain open inside the app, straight to the right page.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg></div>
+        <h4>Pull to refresh</h4>
+        <p>Swipe down to reload, the way every native app does it.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 16 4 4 4-4"/><path d="M7 20V4"/><path d="m21 8-4-4-4 4"/><path d="M17 4v16"/></svg></div>
+        <h4>Uploads and downloads</h4>
+        <p>File pickers, downloads that save to the device, and opening files in other apps.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/></svg></div>
+        <h4>Native sharing</h4>
+        <p>Share pages from your site through the phone's own share sheet.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg></div>
+        <h4>Camera and location</h4>
+        <p>Permission prompts with proper reasons, so your site can use both.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1 1 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg></div>
+        <h4>Signed release builds</h4>
+        <p>Builds are signed with your own upload key. Passwords are never stored on the server.</p>
+      </div>
+    </div>
+  </section>
 
-     response  how quickly it reaches the target, in seconds
-     damping   1.0 settles with no overshoot; below 1.0 bounces
+  <!-- pricing -->
+  <section class="pricing-wrapper" id="pricing">
+    <div class="container">
+      <div class="section-header">
+        <h2>Simple pricing, paid from your phone</h2>
+        <p>No card, no invoice. A mobile money prompt on your phone, and the plan is on the moment it clears.</p>
+      </div>
 
-   Everything a finger can touch is driven by one of these, because a spring
-   re-targets from wherever it currently is. That is what makes an animation
-   interruptible, and interruptibility is the whole game.
-   ═══════════════════════════════════════════════════════════════════════ */
+      <div class="pricing-grid">
+        <div class="price-card">
+          <div class="price-name">Free trial</div>
+          <div class="price-amount">UGX 0</div>
+          <div class="price-per">3 builds to try it with</div>
+          <ul class="price-list">
+            <li>Every feature included</li>
+            <li>Signed APK and AAB downloads</li>
+            <li>iOS project download</li>
+          </ul>
+          <a href="/app#/signup" class="btn btn-secondary">Start free</a>
+        </div>
 
-const REDUCED = matchMedia('(prefers-reduced-motion: reduce)');
+        <div class="price-card featured">
+          <span class="price-badge">Most popular</span>
+          <div class="price-name">Starter</div>
+          <div class="price-amount">UGX 19,000</div>
+          <div class="price-per">per month · 25 builds</div>
+          <ul class="price-list">
+            <li>Everything in the trial</li>
+            <li>25 builds a month</li>
+            <li>Pay by MTN or Airtel Money</li>
+          </ul>
+          <a href="/app#/signup" class="btn btn-primary">Get Starter</a>
+        </div>
 
-function spring(value, { response = 0.4, damping = 1 } = {}) {
-  return { value, target: value, velocity: 0, response, damping, resting: true };
-}
+        <div class="price-card">
+          <div class="price-name">Business</div>
+          <div class="price-amount">UGX 57,000</div>
+          <div class="price-per">per month · 100 builds</div>
+          <ul class="price-list">
+            <li>Everything in Starter</li>
+            <li>100 builds a month</li>
+            <li>Room for many apps</li>
+          </ul>
+          <a href="/app#/signup" class="btn btn-secondary">Get Business</a>
+        </div>
+      </div>
 
-function stepSpring(s, dt) {
-  if (s.resting) return false;
-  const omega = (2 * Math.PI) / s.response;
-  // Sub-stepped so a dropped frame cannot blow the integration up.
-  let remaining = dt;
-  while (remaining > 0) {
-    const h = Math.min(remaining, 1 / 240);
-    const x = s.value - s.target;
-    const a = -omega * omega * x - 2 * s.damping * omega * s.velocity;
-    s.velocity += a * h;
-    s.value += s.velocity * h;
-    remaining -= h;
-  }
-  if (Math.abs(s.value - s.target) < 0.01 && Math.abs(s.velocity) < 0.05) {
-    s.value = s.target; s.velocity = 0; s.resting = true;
-  }
-  return true;
-}
+      <p class="pricing-note">Builds you have already downloaded stay downloadable, whatever happens to your plan.</p>
+    </div>
+  </section>
 
-/* Re-target without touching velocity, so the motion stays continuous. That
-   is what stops a reversal feeling like a brick wall. */
-function retarget(s, target, opts = {}) {
-  s.target = target;
-  if (opts.response !== undefined) s.response = opts.response;
-  if (opts.damping !== undefined) s.damping = opts.damping;
-  if (opts.velocity !== undefined) s.velocity = opts.velocity;
-  s.resting = false;
-}
+  <!-- iOS, honestly -->
+  <section class="ios-section">
+    <div class="container ios-container">
+      <div class="ios-editor">
+        <span class="comment"># Unzip the project on a Mac, then:</span><br>
+        <span class="cmd">$ flutter pub get</span><br>
+        <span class="cmd">$ flutter build ipa</span><br><br>
+        <span class="comment"># Your bundle ID, name, icons and permission
+        <br># strings are already set.</span>
+      </div>
 
-const springs = [];
-function track(s) { springs.push(s); return s; }
+      <div class="ios-desc">
+        <h3>And iOS? You get the whole project.</h3>
+        <p>Apple's toolchain only runs on a Mac, so no online service can hand you a finished iOS app straight from a URL — including this one. What you get instead is the complete, ready-to-build Flutter project as a .zip: open it on a Mac, run two commands, and you have your iOS build. No lock-in, and the code is yours.</p>
+        <a href="/app#/signup" class="btn btn-primary">Build the Android app first</a>
+      </div>
+    </div>
+  </section>
 
-let last = performance.now();
-function frame(now) {
-  const dt = Math.min((now - last) / 1000, 1 / 20);
-  last = now;
-  for (const s of springs) stepSpring(s, dt);
-  for (const fn of renderers) fn();
-  requestAnimationFrame(frame);
-}
-const renderers = [];
-requestAnimationFrame(frame);
+  <!-- FAQ -->
+  <section class="faq-section" id="faq">
+    <div class="container">
+      <div class="section-header">
+        <h2>Frequently asked questions</h2>
+        <p>The short honest answers, before you spend a build finding out.</p>
+      </div>
 
-/* Apple's momentum projection. Not the textbook v²/2a: this exponential
-   decay form is what iOS actually ships, and it is why a flick lands where
-   the throw was going. */
-function project(velocity, deceleration = 0.998) {
-  return (velocity / 1000) * deceleration / (1 - deceleration);
-}
+      <div class="faq-container">
+        <div class="faq-item active">
+          <div class="faq-question" onclick="toggleFaq(this)">
+            <span>How do I build an app without writing code?</span>
+            <span class="faq-toggle">+</span>
+          </div>
+          <div class="faq-answer">
+            Enter your website URL, give the app a name and an icon, and press Build. The server generates the app, builds it, and gives you the files to download. Nothing to install on your computer.
+          </div>
+        </div>
 
-/* The further past a boundary, the less it follows. */
-function rubberband(overshoot, dimension, constant = 0.55) {
-  return (overshoot * dimension * constant) / (dimension + constant * Math.abs(overshoot));
-}
+        <div class="faq-item">
+          <div class="faq-question" onclick="toggleFaq(this)">
+            <span>Can I publish to Google Play?</span>
+            <span class="faq-toggle">+</span>
+          </div>
+          <div class="faq-answer">
+            Yes. Upload your keystore and each build comes out as a signed .aab, which is exactly what the Play Console takes. Your keystore passwords are entered per build and never stored. You publish it on your own Play account.
+          </div>
+        </div>
 
-/* 1:1 up to `limit`, progressively resisted past it. */
-function damped(value, limit, dimension) {
-  const over = Math.abs(value) - limit;
-  if (over <= 0) return value;
-  return Math.sign(value) * (limit + rubberband(over, dimension));
-}
+        <div class="faq-item">
+          <div class="faq-question" onclick="toggleFaq(this)">
+            <span>What about the App Store?</span>
+            <span class="faq-toggle">+</span>
+          </div>
+          <div class="faq-answer">
+            Apple's build tools only run on macOS, so we give you the complete iOS project as a .zip instead — with your bundle ID, name, icons and permission text already in place. Open it on a Mac, run flutter build ipa, and submit from there.
+          </div>
+        </div>
 
-/* A short history, because the last single event is a terrible velocity
-   estimate. One stuttered frame and a gentle release reads as a throw. */
-function tracker() {
-  const points = [];
-  return {
-    add(v) {
-      points.push({ v, t: performance.now() });
-      while (points.length > 6) points.shift();
-    },
-    velocity() {
-      if (points.length < 2) return 0;
-      const a = points[0], b = points[points.length - 1];
-      const dt = (b.t - a.t) / 1000;
-      return dt > 0.002 ? (b.v - a.v) / dt : 0;
-    },
-    reset() { points.length = 0; },
-  };
-}
+        <div class="faq-item">
+          <div class="faq-question" onclick="toggleFaq(this)">
+            <span>Does the app stay up to date with my website?</span>
+            <span class="faq-toggle">+</span>
+          </div>
+          <div class="faq-answer">
+            Yes — the app shows your live website, so anything you change on the site appears in the app immediately. You only rebuild when you want to change the app itself: its name, icon, or features.
+          </div>
+        </div>
 
-/* ═══════════════ press feedback, on the way down ═══════════════ */
-for (const el of document.querySelectorAll('[data-press]')) {
-  el.addEventListener('pointerdown', () => el.classList.add('pressed'));
-  for (const ev of ['pointerup', 'pointercancel', 'pointerleave'])
-    el.addEventListener(ev, () => el.classList.remove('pressed'));
-}
-for (const el of document.querySelectorAll('[data-scroll]')) {
-  el.addEventListener('click', () => {
-    document.querySelector(el.dataset.scroll)
-      .scrollIntoView({ behavior: REDUCED.matches ? 'auto' : 'smooth', block: 'start' });
-  });
-}
+        <div class="faq-item">
+          <div class="faq-question" onclick="toggleFaq(this)">
+            <span>How do payments work?</span>
+            <span class="faq-toggle">+</span>
+          </div>
+          <div class="faq-answer">
+            Choose a plan and enter your mobile money number. A prompt appears on your phone; you approve it with your PIN there — never on the website. The plan switches on as soon as the payment lands, even if you have closed the page.
+          </div>
+        </div>
 
-/* ═══════════════ the phone: drag, tilt, throw ═══════════════ */
-(() => {
-  const stage = document.getElementById('stage');
-  const wrap = document.getElementById('phoneWrap');
-  const hint = document.getElementById('grabHint');
-  if (!stage || !wrap) return;
+        <div class="faq-item">
+          <div class="faq-question" onclick="toggleFaq(this)">
+            <span>What do I need to sign up?</span>
+            <span class="faq-toggle">+</span>
+          </div>
+          <div class="faq-answer">
+            A phone number — we text you a code to confirm it. You start with 3 free builds and no card is ever asked for.
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
 
-  // X and Y are separate springs. One spring on 2D distance desynchronises
-  // the moment the two axes have different velocities.
-  const x = track(spring(0, { response: 0.4, damping: 1 }));
-  const y = track(spring(0, { response: 0.4, damping: 1 }));
-  const rx = track(spring(0, { response: 0.5, damping: 1 }));
-  const ry = track(spring(0, { response: 0.5, damping: 1 }));
-  const sc = track(spring(1, { response: 0.35, damping: 1 }));
+  <!-- footer -->
+  <footer>
+    <div class="footer-watermark">CissyWeb2App</div>
+    <div class="container">
+      <div class="footer-grid">
+        <div>
+          <a href="/" class="logo" style="color: var(--sky-light);">Cissy<span style="color:#fff">Web2App</span></a>
+          <p style="font-size: 0.85rem; margin-top: 10px; max-width: 320px;">Turns your website into an Android app you can put on Google Play, and hands you the iOS project to build on a Mac.</p>
+        </div>
 
-  renderers.push(() => {
-    wrap.style.transform =
-      `translate3d(${x.value.toFixed(2)}px, ${y.value.toFixed(2)}px, 0)` +
-      ` rotateX(${rx.value.toFixed(2)}deg) rotateY(${ry.value.toFixed(2)}deg)` +
-      ` scale(${sc.value.toFixed(3)})`;
-  });
+        <div class="footer-col">
+          <h5>Product</h5>
+          <ul>
+            <li><a href="#how">How it works</a></li>
+            <li><a href="#features">Features</a></li>
+            <li><a href="#pricing">Pricing</a></li>
+            <li><a href="#faq">FAQ</a></li>
+          </ul>
+        </div>
 
-  let dragging = false, grabX = 0, grabY = 0;
-  const vx = tracker(), vy = tracker();
+        <div class="footer-col">
+          <h5>Account</h5>
+          <ul>
+            <li><a href="/app">Log in</a></li>
+            <li><a href="/app#/signup">Create an account</a></li>
+          </ul>
+        </div>
+      </div>
 
-  // Hover tilt. A small input making a big output, and a hint that the thing
-  // is grabbable before anyone has touched it.
-  stage.addEventListener('pointermove', (e) => {
-    if (dragging || REDUCED.matches) return;
-    const r = stage.getBoundingClientRect();
-    const nx = (e.clientX - r.left) / r.width - 0.5;
-    const ny = (e.clientY - r.top) / r.height - 0.5;
-    retarget(ry, nx * 16);
-    retarget(rx, -ny * 12);
-  });
-  stage.addEventListener('pointerleave', () => {
-    if (dragging) return;
-    retarget(rx, 0); retarget(ry, 0);
-  });
+      <div class="footer-bottom">
+        <div>© 2026 Cissytech. All rights reserved.</div>
+        <div style="display:inline-flex;align-items:center;gap:7px">Made in Uganda
+          <svg width="20" height="14" viewBox="0 0 20 14" aria-hidden="true" style="border-radius:2px">
+            <rect width="20" height="14" fill="#000"/>
+            <rect y="2.33" width="20" height="2.33" fill="#fcdc04"/>
+            <rect y="4.66" width="20" height="2.33" fill="#d90000"/>
+            <rect y="9.33" width="20" height="2.33" fill="#fcdc04"/>
+            <rect y="11.66" width="20" height="2.34" fill="#d90000"/>
+            <circle cx="10" cy="7" r="2.6" fill="#fff"/>
+            <circle cx="10" cy="7" r="1" fill="#9ca69c"/>
+          </svg>
+        </div>
+      </div>
+    </div>
+  </footer>
 
-  wrap.addEventListener('pointerdown', (e) => {
-    dragging = true;
-    wrap.setPointerCapture(e.pointerId);
-    wrap.classList.add('grabbing');
-    if (hint) hint.style.opacity = '0';
-
-    // Grabbing it mid-flight must continue from where it visibly is, not from
-    // where the animation thought it was going.
-    x.resting = y.resting = true;
-    x.velocity = y.velocity = 0;
-    grabX = e.clientX - x.value;
-    grabY = e.clientY - y.value;
-    vx.reset(); vy.reset();
-    retarget(sc, 1.03, { response: 0.3 });
-  });
-
-  wrap.addEventListener('pointermove', (e) => {
-    if (!dragging) return;
-    const px = e.clientX - grabX;
-    const py = e.clientY - grabY;
-    // 1:1 inside the bound, resisting beyond it. A real thing slows before
-    // it stops, and it never stops dead.
-    x.value = damped(px, 120, 340);
-    y.value = damped(py, 100, 300);
-    vx.add(x.value); vy.add(y.value);
-    if (!REDUCED.matches) {
-      retarget(ry, Math.max(-22, Math.min(22, x.value * 0.09)), { response: 0.25 });
-      retarget(rx, Math.max(-18, Math.min(18, -y.value * 0.07)), { response: 0.25 });
+  <script>
+    function toggleFaq(element) {
+      element.parentElement.classList.toggle('active');
     }
-  });
 
-  function release(e) {
-    if (!dragging) return;
-    dragging = false;
-    wrap.classList.remove('grabbing');
-    try { wrap.releasePointerCapture(e.pointerId); } catch {}
+    /* ── animate on scroll ──────────────────────────────────────────────
+       Everything here is additive: with reduced motion, no JS, or an old
+       browser, the page is simply visible with nothing hidden. */
+    (function () {
+      if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      if (!('IntersectionObserver' in window)) return;
 
-    // Hand the finger's speed straight to the spring. A little bounce, and
-    // only because an actual throw preceded it.
-    const sx = vx.velocity(), sy = vy.velocity();
-    const thrown = Math.hypot(sx, sy) > 320;
-    const opts = { response: 0.55, damping: thrown ? 0.72 : 1 };
-    retarget(x, 0, { ...opts, velocity: sx });
-    retarget(y, 0, { ...opts, velocity: sy });
-    retarget(rx, 0, { response: 0.6, damping: 0.8 });
-    retarget(ry, 0, { response: 0.6, damping: 0.8 });
-    retarget(sc, 1, { response: 0.4 });
-    if (hint) hint.style.opacity = '';
-  }
-  wrap.addEventListener('pointerup', release);
-  wrap.addEventListener('pointercancel', release);
-})();
+      const items = [];
+      const add = (selector, options = {}) => {
+        document.querySelectorAll(selector).forEach((el, i) => {
+          el.classList.add('reveal');
+          if (options.dir) el.classList.add('reveal-' + options.dir);
+          const delay = (options.base || 0) + i * (options.stagger || 0);
+          if (delay) el.style.transitionDelay = delay + 'ms';
+          items.push(el);
+        });
+      };
 
-/* ═══════════════ live preview: the phone is the output ═══════════════ */
-(() => {
-  /* Nothing here is a colour control, because the product has no colour
-     setting to expose. The generated app is a full-screen WebView with
-     seedColor Colors.grey and a transparent status bar, so every colour on
-     screen belongs to the customer's own website. The mock site below picks
-     a hue from the address purely so the preview moves as you type. */
-  const url = document.getElementById('url');
-  const name = document.getElementById('name');
-  const siteNav = document.getElementById('siteNav');
-  const siteName = document.getElementById('siteName');
-  const siteMark = document.getElementById('siteMark');
-  const host = document.getElementById('siteHost');
-  const siteHero = document.getElementById('siteHero');
-  let colour = '#00ccff';
+      // The hero arrives as a sequence; everything below reveals as you reach it.
+      add('.badge-bar');
+      add('.hero h1', { base: 80 });
+      add('.hero-subtitle', { base: 160 });
+      add('.url-box', { base: 240 });
+      add('.steps-grid .step-card', { base: 320, stagger: 130 });
+      add('.cta-banner', { dir: 'pop' });
+      add('.section-header');
+      add('.features-grid .feature-card', { stagger: 70 });
+      add('.pricing-grid .price-card', { stagger: 110 });
+      add('.pricing-note', { base: 300 });
+      add('.ios-editor', { dir: 'left' });
+      add('.ios-desc', { dir: 'right' });
+      add('.faq-container .faq-item', { stagger: 80 });
 
-  function hueFrom(text) {
-    let h = 0;
-    for (const ch of String(text)) h = (h * 31 + ch.charCodeAt(0)) % 360;
-    return h;
-  }
-  function siteColour(text) {
-    // Kept out of the yellow-green band, where white label text stops being
-    // legible on the mock nav.
-    const h = hueFrom(text);
-    const safe = h > 60 && h < 150 ? h + 110 : h;
-    return `hsl(${safe % 360} 68% 46%)`;
-  }
+      const seen = new IntersectionObserver((entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          const el = entry.target;
+          seen.unobserve(el);
+          el.classList.add('in');
+          // Drop the reveal machinery once it has played, so card hover
+          // transitions are not stuck behind a stagger delay.
+          el.addEventListener('transitionend', () => {
+            el.classList.remove('reveal', 'reveal-left', 'reveal-right', 'reveal-pop', 'in');
+            el.style.transitionDelay = '';
+          }, { once: true });
+        }
+      }, { threshold: 0.15, rootMargin: '0px 0px -40px 0px' });
+      items.forEach((el) => seen.observe(el));
 
-  function initials(text) {
-    const parts = String(text).trim().split(/\s+/).filter(Boolean);
-    if (!parts.length) return '··';
-    return (parts[0][0] + (parts[1] ? parts[1][0] : '')).toUpperCase();
-  }
-  function hostOf(value) {
-    const raw = String(value).trim();
-    if (!raw) return 'your-site.com';
-    try { return new URL(raw.includes('://') ? raw : 'https://' + raw).host; }
-    catch { return raw.replace(/^https?:\/\//, '').split('/')[0] || 'your-site.com'; }
-  }
-
-  // No debounce. The preview is the feedback, and a delay on the feedback path
-  // is exactly the latency this page is arguing against.
-  function paint() {
-    const label = name.value.trim() || 'Your App';
-    const site = hostOf(url.value);
-    colour = siteColour(site);
-    siteName.textContent = label;
-    siteMark.textContent = initials(label);
-    host.textContent = site;
-    siteNav.style.background = colour;
-    siteHero.style.background =
-      `linear-gradient(150deg, ${colour}, hsl(${hueFrom(site) % 360} 62% 34%))`;
-  }
-
-  url.addEventListener('input', paint);
-  name.addEventListener('input', paint);
-  paint();
-
-  /* ── the build, simulated but honest about what it says ── */
-  const STEPS = [
-    [4,  'Preparing your build…', ''],
-    [10, '$ flutter create --org com.cissytech portal', 'c'],
-    [18, 'Writing lib/main.dart', ''],
-    [26, 'Writing android/app/build.gradle.kts', ''],
-    [34, '$ flutter pub get', 'c'],
-    [42, 'Resolving dependencies… 24 packages', ''],
-    [52, '$ dart run flutter_launcher_icons', 'c'],
-    [58, 'Generated Android mipmaps and iOS appiconset', ''],
-    [66, '$ flutter build apk --split-per-abi --release', 'c'],
-    [74, 'Running Gradle task assembleRelease…', ''],
-    [86, 'Signing with your upload key', ''],
-    [94, 'Built app-arm64-v8a-release.apk (14.8 MB)', 'g'],
-    [100,'Done. Your app is ready.', 'w'],
-  ];
-  const consoleBox = document.getElementById('console');
-  const fill = document.getElementById('meterFill');
-  const pct = document.getElementById('meterPct');
-  const meterLabel = document.getElementById('meterLabel');
-  const buildBtn = document.getElementById('buildBtn');
-  const dlBtn = document.getElementById('dlBtn');
-  let running = false;
-
-  // The progress bar is a spring too. It eases into each new value instead
-  // of stepping, which is what makes a jumpy backend feel steady.
-  const prog = track(spring(0, { response: 0.7, damping: 1 }));
-  renderers.push(() => {
-    fill.style.width = prog.value.toFixed(1) + '%';
-    pct.textContent = Math.round(prog.value) + '%';
-  });
-
-  buildBtn.addEventListener('click', () => {
-    if (running) return;
-    running = true;
-    buildBtn.disabled = true;
-    dlBtn.disabled = true;
-    buildBtn.textContent = 'Building…';
-    meterLabel.textContent = 'Preparing your build…';
-    consoleBox.replaceChildren();
-    retarget(prog, 0, { response: 0.2 });
-
-    let i = 0;
-    (function next() {
-      if (i >= STEPS.length) {
-        running = false;
-        buildBtn.disabled = false;
-        buildBtn.textContent = 'Build again';
-        dlBtn.disabled = false;
-        dlBtn.textContent = `Download ${(name.value.trim() || 'app')}.apk`;
-        meterLabel.textContent = 'Finished';
-        return;
+      // The build log types itself, line by line, with a cursor.
+      const consoleBox = document.querySelector('.mockup-console');
+      if (consoleBox) {
+        const lines = [...consoleBox.children];
+        consoleBox.classList.add('typing');
+        const watcher = new IntersectionObserver((entries) => {
+          if (!entries[0].isIntersecting) return;
+          watcher.disconnect();
+          lines.forEach((line, i) => {
+            setTimeout(() => {
+              if (i) lines[i - 1].classList.remove('cursor');
+              line.classList.add('on', 'cursor');
+              if (i === lines.length - 1) {
+                setTimeout(() => line.classList.remove('cursor'), 2200);
+              }
+            }, 600 + i * 600);
+          });
+        }, { threshold: 0.4 });
+        watcher.observe(consoleBox);
       }
-      const [to, text, cls] = STEPS[i++];
-      const line = document.createElement('div');
-      line.className = 'l ' + (cls || '');
-      line.textContent = text;
-      consoleBox.append(line);
-      consoleBox.scrollTop = consoleBox.scrollHeight;
-      retarget(prog, to);
-      if (i === 2) meterLabel.textContent = 'Building';
-      setTimeout(next, 240 + Math.random() * 420);
+
+      // Header shadow once the page moves.
+      const header = document.querySelector('header');
+      addEventListener('scroll', () => {
+        header.classList.toggle('scrolled', scrollY > 8);
+      }, { passive: true });
     })();
-  });
-
-  dlBtn.addEventListener('click', () => {
-    if (dlBtn.disabled) return;
-    dlBtn.textContent = 'This is a prototype, nothing to download yet';
-    setTimeout(() => {
-      dlBtn.textContent = `Download ${(name.value.trim() || 'app')}.apk`;
-    }, 2200);
-  });
-})();
-
-/* ═══════════════ the card rail: drag, flick, project, snap ═══════════════ */
-(() => {
-  const outer = document.getElementById('railOuter');
-  const rail = document.getElementById('rail');
-  const dotsBox = document.getElementById('dots');
-  if (!outer || !rail) return;
-
-  const pos = track(spring(0, { response: 0.4, damping: 1 }));
-  let stops = [], index = 0;
-
-  function measure() {
-    const cards = [...rail.children];
-    const width = outer.clientWidth;
-    const total = rail.scrollWidth;
-    const maxScroll = Math.max(0, total - width);
-    const origin = cards.length ? cards[0].offsetLeft : 0;
-    stops = cards.map((c) => Math.min(maxScroll, c.offsetLeft - origin)).filter(
-      (v, i, a) => i === 0 || v !== a[i - 1]);
-    if (stops[stops.length - 1] !== maxScroll) stops.push(maxScroll);
-    return maxScroll;
-  }
-  let maxScroll = measure();
-  addEventListener('resize', () => { maxScroll = measure(); buildDots(); snapTo(index); });
-
-  renderers.push(() => {
-    rail.style.transform = `translate3d(${(-pos.value).toFixed(2)}px,0,0)`;
-  });
-
-  function nearest(value) {
-    let best = 0;
-    for (let i = 1; i < stops.length; i++)
-      if (Math.abs(stops[i] - value) < Math.abs(stops[best] - value)) best = i;
-    return best;
-  }
-  function setIndex(i) {
-    index = i;
-    for (const [n, dot] of [...dotsBox.children].entries())
-      dot.setAttribute('aria-current', String(n === i));
-  }
-  function snapTo(i, velocity = 0, thrown = false) {
-    setIndex(Math.max(0, Math.min(stops.length - 1, i)));
-    retarget(pos, stops[index], {
-      response: 0.42,
-      damping: thrown ? 0.8 : 1,   // overshoot only after a real flick
-      velocity,
-    });
-  }
-
-  /* One dot per resting place, not per card. Five cards fit into three
-     screens, so a dot per card would leave two that can never light up. */
-  function buildDots() {
-    dotsBox.replaceChildren();
-    for (let i = 0; i < stops.length; i++) {
-      const b = document.createElement('button');
-      b.setAttribute('role', 'tab');
-      b.setAttribute('aria-label', 'View ' + (i + 1) + ' of ' + stops.length);
-      b.addEventListener('click', () => snapTo(i));
-      dotsBox.append(b);
-    }
-    setIndex(Math.min(index, stops.length - 1));
-  }
-  buildDots();
-
-  let dragging = false, grab = 0, startX = 0, moved = 0;
-  const vel = tracker();
-
-  outer.addEventListener('pointerdown', (e) => {
-    dragging = true; moved = 0; startX = e.clientX;
-    outer.setPointerCapture(e.pointerId);
-    outer.classList.add('grabbing');
-    pos.resting = true; pos.velocity = 0;   // catch it wherever it visibly is
-    grab = e.clientX + pos.value;
-    vel.reset(); vel.add(pos.value);
-  });
-
-  outer.addEventListener('pointermove', (e) => {
-    if (!dragging) return;
-    const raw = grab - e.clientX;
-    moved = Math.abs(e.clientX - startX);
-    // Past either end it follows less and less, rather than stopping dead.
-    if (raw < 0) pos.value = -rubberband(-raw, 300);
-    else if (raw > maxScroll) pos.value = maxScroll + rubberband(raw - maxScroll, 300);
-    else pos.value = raw;
-    vel.add(pos.value);
-  });
-
-  function release(e) {
-    if (!dragging) return;
-    dragging = false;
-    outer.classList.remove('grabbing');
-    try { outer.releasePointerCapture(e.pointerId); } catch {}
-
-    const v = vel.velocity();
-    // Land where the throw was going, not wherever the finger happened to
-    // stop. This is the whole difference between a flick and a nudge.
-    const projected = pos.value + project(v);
-    snapTo(nearest(projected), v, Math.abs(v) > 350);
-  }
-  outer.addEventListener('pointerup', release);
-  outer.addEventListener('pointercancel', release);
-  // A drag must never fire the click underneath it.
-  outer.addEventListener('click', (e) => { if (moved > 8) e.preventDefault(); }, true);
-
-})();
-
-/* ═══════════════ scroll reveals ═══════════════ */
-(() => {
-  const items = document.querySelectorAll('.rise');
-  if (REDUCED.matches || !('IntersectionObserver' in window)) {
-    for (const el of items) el.classList.add('in');
-    return;
-  }
-  const io = new IntersectionObserver((entries) => {
-    for (const entry of entries) {
-      if (!entry.isIntersecting) continue;
-      entry.target.classList.add('in');
-      io.unobserve(entry.target);
-    }
-  }, { rootMargin: '0px 0px -12% 0px', threshold: 0.05 });
-  for (const el of items) io.observe(el);
-})();
-
-/* ═══════════════ nav weight follows scroll ═══════════════ */
-(() => {
-  const nav = document.getElementById('nav');
-  let ticking = false;
-  addEventListener('scroll', () => {
-    if (ticking) return;
-    ticking = true;
-    requestAnimationFrame(() => {
-      const deep = scrollY > 40;
-      nav.style.background = deep ? 'rgba(255,255,255,.82)' : 'rgba(255,255,255,.5)';
-      ticking = false;
-    });
-  }, { passive: true });
-})();
-</script>
-
+  </script>
+</body>
+</html>

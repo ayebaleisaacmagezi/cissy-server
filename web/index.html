@@ -3,13 +3,16 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Cissyweb2app</title>
+  <title>CissyWeb2App</title>
   <link rel="stylesheet" href="style.css">
 </head>
-<body>
+<!-- Starts signed-out so the sidebar and topbar cannot flash at somebody who
+     is about to be shown the login screen. route() removes the class once the
+     session check says who this is. -->
+<body class="signed-out">
   <div class="shell">
     <nav class="sidebar">
-      <div class="side-brand">Cissy<span>web2app</span></div>
+      <div class="side-brand">Cissy<span>Web2App</span></div>
       <div id="side-nav"></div>
       <div class="side-foot" id="side-foot">
         <div class="ln">Checking toolchain…</div>
@@ -18,12 +21,14 @@
 
     <div class="main">
       <div class="topbar">
-        <span class="crumb" id="crumb">Loading…</span>
+        <span class="crumb" id="crumb"></span>
         <div class="spacer"></div>
         <div id="topbar-actions"></div>
         <div id="account"></div>
       </div>
-      <div class="content" id="content"></div>
+      <div class="content" id="content">
+        <div class="boot"><div class="spin"></div></div>
+      </div>
     </div>
   </div>
 
