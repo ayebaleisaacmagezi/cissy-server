@@ -4,37 +4,48 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>CissyWeb2App — your website as an Android app</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,300..700,0..1,0&display=block" rel="stylesheet">
   <style>
     /* ───────────────────────────────────────────────────────────────────
-       The product's own cyan family, mapped onto this layout's roles.
-       Buttons carry the same gradient as the app so the two feel like
-       one product. System fonts on purpose: no external requests.
+       The brand: blue #01a6ff, grey #6d6a6a. Solid colors only — no
+       gradients, no eyebrow labels. Inter for type, Material Symbols
+       Outlined for icons, both from Google Fonts.
        ─────────────────────────────────────────────────────────────────── */
     :root {
-      --primary: #007a99;          /* the brand at a weight text can carry */
-      --primary-hover: #00657f;
-      --sky-light: #6ce2ff;
-      --sky-bg: #f2fbfe;
-      --sky-border: #a8eeff;
-      --sky-accent: #d6f7ff;
-      --dark: #0c1a21;
-      --muted: #4d6874;
+      --brand: #01a6ff;            /* the brand blue, for paint            */
+      --primary: #0180c6;          /* the brand at a weight text can carry */
+      --primary-hover: #0195e6;
+      --sky-light: #7fd0ff;
+      --sky-bg: #f2faff;
+      --sky-border: #bfe7ff;
+      --sky-accent: #e2f4ff;
+      --dark: #262525;
+      --muted: #6d6a6a;
       --white: #ffffff;
-      --border: #dce8ed;
-      --shadow: 0 10px 25px -5px rgba(0, 148, 187, 0.1), 0 8px 10px -6px rgba(0, 148, 187, 0.05);
+      --border: #e4e2e2;
+      --shadow: 0 10px 25px -5px rgba(38, 37, 37, 0.08), 0 8px 10px -6px rgba(38, 37, 37, 0.04);
       --radius: 12px;
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
-      background: #f8fcfd;
+      background: #fafafa;
       color: var(--dark);
-      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI",
-        Roboto, Helvetica, Arial, sans-serif;
+      font-family: "Inter", Roboto, -apple-system, "Segoe UI",
+        Helvetica, Arial, sans-serif;
       line-height: 1.6;
       overflow-x: hidden;
       -webkit-font-smoothing: antialiased;
+    }
+
+    .material-symbols-outlined {
+      font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24;
+      line-height: 1;
+      user-select: none;
     }
 
     a { text-decoration: none; color: inherit; }
@@ -56,7 +67,7 @@
     .logo span { color: var(--dark); }
     .nav-links {
       display: flex; gap: 28px; list-style: none;
-      font-weight: 500; color: #33505c; font-size: 0.95rem;
+      font-weight: 500; color: #4a4747; font-size: 0.95rem;
     }
     .nav-links a:hover { color: var(--primary); }
     .nav-btns { display: flex; gap: 12px; align-items: center; }
@@ -70,25 +81,25 @@
     .btn-text { background: transparent; color: var(--dark); }
     .btn-text:hover { color: var(--primary); }
     .btn-primary {
-      background: linear-gradient(180deg, #14d2ff, #00b6e6);
-      color: #00232e; font-weight: 700;
-      box-shadow: 0 4px 14px rgba(0, 182, 230, 0.35);
+      background: var(--brand);
+      color: #ffffff; font-weight: 700;
+      box-shadow: 0 4px 14px rgba(1, 166, 255, 0.35);
     }
-    .btn-primary:hover { filter: brightness(1.06); }
+    .btn-primary:hover { background: var(--primary-hover); }
     .btn-secondary { background: var(--sky-accent); color: var(--primary); }
     .btn-secondary:hover { background: var(--sky-border); }
 
     /* ── hero ── */
     .hero {
       padding: 60px 0 40px; text-align: center;
-      background: linear-gradient(180deg, var(--sky-bg) 0%, #ffffff 100%);
+      background: var(--sky-bg);
     }
     .badge-bar {
       display: inline-flex; flex-wrap: wrap; justify-content: center; gap: 15px;
       background: var(--white); padding: 8px 22px; border-radius: 30px;
       font-size: 0.85rem; font-weight: 500; color: var(--muted);
       border: 1px solid var(--sky-border); margin-bottom: 25px;
-      box-shadow: 0 2px 8px rgba(0, 148, 187, 0.08);
+      box-shadow: 0 2px 8px rgba(38, 37, 37, 0.06);
     }
     .badge-bar strong { color: var(--primary); }
 
@@ -119,7 +130,7 @@
     .step-header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
     .step-num {
       width: 34px; height: 34px; flex: none;
-      background: linear-gradient(180deg, #14d2ff, #00b6e6); color: #00232e;
+      background: var(--brand); color: #ffffff;
       border-radius: 50%; display: flex; align-items: center; justify-content: center;
       font-weight: 800; font-size: 0.95rem;
     }
@@ -145,11 +156,11 @@
 
     /* step 2: the live build log, which is the real experience */
     .mockup-console {
-      background: #0b161c; border-radius: 10px; padding: 14px 16px;
+      background: #1c1b1b; border-radius: 10px; padding: 14px 16px;
       text-align: left; font-size: 0.72rem; line-height: 1.8;
-      border: 1px solid rgba(0, 204, 255, 0.18);
+      border: 1px solid rgba(1, 166, 255, 0.18);
     }
-    .mockup-console div { color: #c4d6de; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .mockup-console div { color: #cfcdcd; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .mockup-console .c-cmd { color: #ffffff; font-weight: 600; }
     .mockup-console .c-ok { color: #6fe3a0; }
 
@@ -162,7 +173,7 @@
 
     /* ── CTA banner ── */
     .cta-banner {
-      background: linear-gradient(135deg, #00a8d6 0%, #007a99 100%);
+      background: var(--brand);
       color: var(--white); border-radius: 16px; padding: 35px 40px; margin: 50px 0;
       display: flex; align-items: center; justify-content: space-between;
       box-shadow: var(--shadow); gap: 20px;
@@ -193,8 +204,8 @@
       border-radius: 10px; display: flex; align-items: center; justify-content: center;
       margin-bottom: 16px;
     }
-    .feature-icon-box svg { width: 22px; height: 22px; }
-    .inline-ic { width: 15px; height: 15px; vertical-align: -2px; flex: none; }
+    .feature-icon-box .material-symbols-outlined { font-size: 24px; }
+    .inline-ic { font-size: 15px; vertical-align: -2px; flex: none; }
     .feature-card h4 { font-size: 1.05rem; font-weight: 700; margin-bottom: 8px; }
     .feature-card p { font-size: 0.85rem; color: var(--muted); }
 
@@ -217,8 +228,8 @@
       font-size: 0.75rem; font-weight: 700; padding: 4px 10px; border-radius: 20px;
     }
     .price-name {
-      font-size: 0.8rem; font-weight: 700; text-transform: uppercase;
-      letter-spacing: 0.08em; color: var(--primary); margin-bottom: 10px;
+      font-size: 0.95rem; font-weight: 700;
+      color: var(--primary); margin-bottom: 10px;
     }
     .price-amount { font-size: 1.9rem; font-weight: 800; letter-spacing: -0.03em; }
     .price-per { font-size: 0.85rem; color: var(--muted); margin-bottom: 18px; }
@@ -233,11 +244,11 @@
       display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: center;
     }
     .ios-editor {
-      background: #0b161c; color: #6ce2ff; border-radius: var(--radius);
+      background: #1c1b1b; color: #7fd0ff; border-radius: var(--radius);
       padding: 24px; font-family: "SF Mono", "Cascadia Mono", ui-monospace, Consolas, monospace;
       font-size: 0.85rem; box-shadow: var(--shadow); line-height: 1.8;
     }
-    .ios-editor .comment { color: #64748b; }
+    .ios-editor .comment { color: #8e8b8b; }
     .ios-editor .cmd { color: #ffffff; }
     .ios-desc h3 { font-size: 1.8rem; font-weight: 700; margin-bottom: 12px; letter-spacing: -0.02em; }
     .ios-desc p { color: var(--muted); margin-bottom: 20px; font-size: 0.95rem; }
@@ -263,7 +274,7 @@
 
     /* ── footer ── */
     footer {
-      background: #071b24; color: #8aa0ab; padding: 70px 0 30px;
+      background: #262525; color: #b0adad; padding: 70px 0 30px;
       font-size: 0.9rem; position: relative; overflow: hidden;
     }
     .footer-watermark {
@@ -277,10 +288,10 @@
     }
     .footer-col h5 { color: var(--white); font-size: 1rem; margin-bottom: 18px; font-weight: 700; }
     .footer-col ul { list-style: none; display: flex; flex-direction: column; gap: 10px; }
-    .footer-col ul a { color: #8aa0ab; }
+    .footer-col ul a { color: #b0adad; }
     .footer-col ul a:hover { color: var(--sky-light); }
     .footer-bottom {
-      border-top: 1px solid #12303c; padding-top: 25px;
+      border-top: 1px solid #3a3737; padding-top: 25px;
       display: flex; justify-content: space-between; align-items: center; gap: 10px;
       position: relative; z-index: 2; font-size: 0.85rem; flex-wrap: wrap;
     }
@@ -312,7 +323,7 @@
 
     /* the header lifts once the page starts moving */
     header { transition: box-shadow 0.25s ease; }
-    header.scrolled { box-shadow: 0 6px 24px -8px rgba(0, 148, 187, 0.18); }
+    header.scrolled { box-shadow: 0 6px 24px -8px rgba(38, 37, 37, 0.15); }
 
     /* ── responsive ── */
     @media (max-width: 992px) {
@@ -382,8 +393,8 @@
           </div>
           <div class="mockup-window">
             <div class="mockup-input">
-              <span style="display:inline-flex;align-items:center;gap:6px"><svg class="inline-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>https://yourwebsite.com</span>
-              <svg class="inline-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+              <span style="display:inline-flex;align-items:center;gap:6px"><span class="material-symbols-outlined inline-ic" aria-hidden="true">language</span>https://yourwebsite.com</span>
+              <span class="material-symbols-outlined inline-ic" aria-hidden="true">arrow_forward</span>
             </div>
             <div class="mockup-tabs">
               <span class="mockup-tab">+ Icon</span>
@@ -451,45 +462,45 @@
       <p>Every feature here ships in the app you download — switch each one on or off per app.</p>
     </div>
 
-    <!-- Icons: Lucide (lucide.dev), ISC licence — free for commercial use. -->
+    <!-- Icons: Material Symbols Outlined (fonts.google.com/icons). -->
     <div class="features-grid">
       <div class="feature-card">
-        <div class="feature-icon-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></svg></div>
+        <div class="feature-icon-box"><span class="material-symbols-outlined" aria-hidden="true">palette</span></div>
         <h4>Your icon and splash screen</h4>
         <p>Upload once and the launcher icons and splash are generated for every screen size.</p>
       </div>
       <div class="feature-card">
-        <div class="feature-icon-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h.01"/><path d="M8.5 16.429a5 5 0 0 1 7 0"/><path d="M5 12.859a10 10 0 0 1 5.17-2.69"/><path d="M19 12.859a10 10 0 0 0-2.007-1.523"/><path d="M2 8.82a15 15 0 0 1 4.177-2.643"/><path d="M22 8.82a15 15 0 0 0-11.288-3.764"/><path d="m2 2 20 20"/></svg></div>
+        <div class="feature-icon-box"><span class="material-symbols-outlined" aria-hidden="true">wifi_off</span></div>
         <h4>Offline screen</h4>
         <p>When the connection drops, users see a branded screen with Try again — not a browser error.</p>
       </div>
       <div class="feature-card">
-        <div class="feature-icon-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></div>
+        <div class="feature-icon-box"><span class="material-symbols-outlined" aria-hidden="true">link</span></div>
         <h4>Deep links</h4>
         <p>Links to your domain open inside the app, straight to the right page.</p>
       </div>
       <div class="feature-card">
-        <div class="feature-icon-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg></div>
+        <div class="feature-icon-box"><span class="material-symbols-outlined" aria-hidden="true">refresh</span></div>
         <h4>Pull to refresh</h4>
         <p>Swipe down to reload, the way every native app does it.</p>
       </div>
       <div class="feature-card">
-        <div class="feature-icon-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 16 4 4 4-4"/><path d="M7 20V4"/><path d="m21 8-4-4-4 4"/><path d="M17 4v16"/></svg></div>
+        <div class="feature-icon-box"><span class="material-symbols-outlined" aria-hidden="true">swap_vert</span></div>
         <h4>Uploads and downloads</h4>
         <p>File pickers, downloads that save to the device, and opening files in other apps.</p>
       </div>
       <div class="feature-card">
-        <div class="feature-icon-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/></svg></div>
+        <div class="feature-icon-box"><span class="material-symbols-outlined" aria-hidden="true">share</span></div>
         <h4>Native sharing</h4>
         <p>Share pages from your site through the phone's own share sheet.</p>
       </div>
       <div class="feature-card">
-        <div class="feature-icon-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg></div>
+        <div class="feature-icon-box"><span class="material-symbols-outlined" aria-hidden="true">photo_camera</span></div>
         <h4>Camera and location</h4>
         <p>Permission prompts with proper reasons, so your site can use both.</p>
       </div>
       <div class="feature-card">
-        <div class="feature-icon-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1 1 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg></div>
+        <div class="feature-icon-box"><span class="material-symbols-outlined" aria-hidden="true">verified_user</span></div>
         <h4>Signed release builds</h4>
         <p>Builds are signed with your own upload key. Passwords are never stored on the server.</p>
       </div>

@@ -56,34 +56,33 @@ function clear(node) {
   return node;
 }
 
-/* Inline SVG icons for the chrome. Static strings only — nothing here ever
- * carries user input, which is what makes innerHTML safe in this one place. */
+/* Material Symbols Outlined names. The font renders the element's text as a
+ * ligature, so the name below IS the icon on screen. */
 const ICONS = {
-  apps: '<rect x="3" y="3" width="7.5" height="7.5" rx="1.8"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.8"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.8"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.8"/>',
-  plus: '<path d="M12 5v14M5 12h14"/>',
-  billing: '<rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="M2.5 9.5h19M6 15h4"/>',
-  admin: '<path d="M12 3l7 3v5c0 4.4-3 7.5-7 9-4-1.5-7-4.6-7-9V6z"/>',
-  overview: '<path d="M3 11l9-7 9 7M5.5 9.5V20h13V9.5"/>',
-  identity: '<circle cx="12" cy="8" r="3.5"/><path d="M5.5 20c1-3.6 3.5-5.2 6.5-5.2s5.5 1.6 6.5 5.2"/>',
-  webview: '<circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="4" ry="9"/><path d="M3 12h18"/>',
-  branding: '<rect x="3" y="4.5" width="18" height="15" rx="2.2"/><circle cx="8.5" cy="10" r="1.6"/><path d="M3 17l5.5-4.5 3.5 3 4-4L21 16"/>',
-  features: '<path d="M4 8h8m6 0h2M4 16h2m8 0h6"/><circle cx="15" cy="8" r="2.2"/><circle cx="9" cy="16" r="2.2"/>',
-  offline: '<path d="M7 18a4.5 4.5 0 1 1 .6-8.96A6 6 0 0 1 19.3 11 3.6 3.6 0 0 1 18 18z"/>',
-  signing: '<circle cx="8" cy="15" r="4.2"/><path d="M11.2 11.8L20 3m-4 4l3 3"/>',
-  build: '<path d="M8 5.5L19 12 8 18.5z"/>',
-  chevron: '<path d="M6 9l6 6 6-6"/>',
+  apps: 'grid_view',
+  plus: 'add',
+  billing: 'credit_card',
+  admin: 'admin_panel_settings',
+  overview: 'home',
+  identity: 'person',
+  webview: 'language',
+  branding: 'image',
+  features: 'tune',
+  offline: 'cloud_off',
+  signing: 'key',
+  build: 'play_arrow',
+  chevron: 'expand_more',
 };
 
 function icon(name, cls = 'gl') {
-  const span = el('span', { class: cls });
-  span.innerHTML =
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" '
-    + 'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
-    + (ICONS[name] || '') + '</svg>';
-  return span;
+  return el('span', {
+    class: cls + ' material-symbols-outlined',
+    'aria-hidden': 'true',
+    text: ICONS[name] || name,
+  });
 }
 
-/* The gradient square that stands in for an app icon, carrying the app's
+/* The brand-blue square that stands in for an app icon, carrying the app's
  * initial so a list of them is tellable apart. */
 function appIcon(name) {
   const letter = (name || '').trim().charAt(0).toUpperCase();

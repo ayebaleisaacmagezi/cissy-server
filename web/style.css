@@ -1,36 +1,34 @@
 /* ─────────────────────────────────────────────────────────────────────────
    Cissyweb2app — the signed-in app.
 
-   One design language with the landing page: white ground, the cyan family
-   as light (never paint), pill buttons with the same gradient, hairline
-   borders and layered soft shadows for depth. The build console is the one
-   deliberately dark surface — the machine at the middle of the product.
-
-   Palette is carried over unchanged from the previous design spec.
+   One design language with the landing page: white ground, the brand blue
+   #01a6ff and the brand grey #6d6a6a, solid colors only — no gradients, no
+   eyebrow labels. Hairline borders and layered soft shadows for depth. The
+   build console is the one deliberately dark surface — the machine at the
+   middle of the product. Type is Inter; icons are Material Symbols Outlined.
    ───────────────────────────────────────────────────────────────────────── */
 
 :root {
   /* ground */
-  --bg: #f2f9fb;                       /* the app frame, a cool wash        */
+  --bg: #f7f7f7;                       /* the app frame                     */
   --surface: #ffffff;                  /* cards, inputs, topbar             */
-  --console: #0b161c;                  /* the one dark surface              */
+  --console: #1c1b1b;                  /* the one dark surface              */
 
-  /* the cyan family — kept */
-  --accent: #00ccff;
-  --accent-2: #6ce2ff;
-  --accent-ink: #007a99;               /* the brand at a weight text can carry */
-  --accent-dim: rgba(0, 204, 255, 0.12);
-  --elevated: #d6f7ff;
-  --soft: #a8eeff;
+  /* the brand blue */
+  --accent: #01a6ff;
+  --accent-ink: #0180c6;               /* the brand at a weight text can carry */
+  --accent-dim: rgba(1, 166, 255, 0.1);
+  --elevated: #dff2ff;
+  --soft: #a9dfff;
 
-  /* ink */
-  --ink: #0c1a21;
-  --ink-2: #4d6874;
-  --ink-3: #7f97a2;
+  /* ink — the brand grey family */
+  --ink: #262525;
+  --ink-2: #6d6a6a;
+  --ink-3: #8e8b8b;
 
   /* hairlines */
-  --hair: rgba(9, 32, 42, 0.12);
-  --hair-2: rgba(9, 32, 42, 0.07);
+  --hair: rgba(38, 37, 37, 0.13);
+  --hair-2: rgba(38, 37, 37, 0.07);
 
   /* semantics — kept */
   --ok: #35c978;
@@ -43,9 +41,9 @@
   --r: 10px;
   --r-lg: 16px;
 
-  --shadow-1: 0 1px 2px rgba(9, 32, 42, 0.05);
-  --shadow-2: 0 1px 2px rgba(9, 32, 42, 0.05), 0 12px 32px -18px rgba(9, 32, 42, 0.18);
-  --shadow-pop: 0 1px 2px rgba(9, 32, 42, 0.06), 0 24px 60px -24px rgba(9, 32, 42, 0.35);
+  --shadow-1: 0 1px 2px rgba(38, 37, 37, 0.05);
+  --shadow-2: 0 1px 2px rgba(38, 37, 37, 0.05), 0 12px 32px -18px rgba(38, 37, 37, 0.18);
+  --shadow-pop: 0 1px 2px rgba(38, 37, 37, 0.06), 0 24px 60px -24px rgba(38, 37, 37, 0.35);
 
   --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
 }
@@ -56,14 +54,23 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--ink);
-  font: 14.5px/1.55 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI",
-    Roboto, Helvetica, Arial, sans-serif;
+  font: 14.5px/1.55 "Inter", Roboto, -apple-system, "Segoe UI",
+    Helvetica, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
 
 .mono, code {
   font-family: "SF Mono", "Cascadia Mono", ui-monospace, Consolas, monospace;
+}
+
+/* Material Symbols Outlined — the glyph is the element's text, rendered as a
+ * ligature by the font. Sized here so every use inherits one look. */
+.material-symbols-outlined {
+  font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24;
+  font-size: 20px;
+  line-height: 1;
+  user-select: none;
 }
 
 :focus-visible {
@@ -117,13 +124,11 @@ body {
   font-size: 13px; font-weight: 600; flex: 1;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.appswitch .car { color: var(--ink-3); display: inline-flex; }
-.appswitch .car svg { width: 14px; height: 14px; }
+.appswitch .car { color: var(--ink-3); display: inline-flex; font-size: 16px; }
 
 .nav-group { padding: 0 12px; margin-bottom: 18px; }
 .nav-label {
-  font-size: 10.5px; font-weight: 700; letter-spacing: 0.11em;
-  text-transform: uppercase; color: var(--ink-3); padding: 0 10px 8px;
+  font-size: 12px; font-weight: 600; color: var(--ink-3); padding: 0 10px 8px;
 }
 .nav-item {
   display: flex; align-items: center; gap: 11px;
@@ -133,10 +138,9 @@ body {
   color: var(--ink-2); text-align: left; cursor: pointer;
   transition: background 140ms var(--ease), color 140ms var(--ease);
 }
-.nav-item:hover { background: rgba(9, 32, 42, 0.05); color: var(--ink); }
+.nav-item:hover { background: rgba(38, 37, 37, 0.05); color: var(--ink); }
 .nav-item.active { background: var(--accent-dim); color: var(--accent-ink); font-weight: 600; }
-.nav-item .gl { display: inline-flex; color: var(--ink-3); flex: none; }
-.nav-item .gl svg { width: 16px; height: 16px; }
+.nav-item .gl { display: inline-flex; color: var(--ink-3); flex: none; font-size: 18px; }
 .nav-item:hover .gl { color: var(--ink-2); }
 .nav-item.active .gl { color: var(--accent-ink); }
 .nav-item .badge {
@@ -213,19 +217,19 @@ body {
   transition: transform 110ms var(--ease), background 180ms var(--ease),
     border-color 180ms var(--ease), box-shadow 180ms var(--ease), opacity 180ms;
 }
-.btn:hover:not(:disabled) { background: #f3fafc; border-color: rgba(9, 32, 42, 0.2); }
+.btn:hover:not(:disabled) { background: #f7f7f7; border-color: rgba(38, 37, 37, 0.2); }
 .btn:active:not(:disabled) { transform: scale(0.965); }
 .btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .btn.primary {
-  background: linear-gradient(180deg, #14d2ff, #00b6e6);
-  border-color: transparent; color: #00232e; font-weight: 700;
-  box-shadow: 0 6px 20px rgba(0, 182, 230, 0.32);
+  background: var(--accent);
+  border-color: transparent; color: #ffffff; font-weight: 700;
+  box-shadow: 0 6px 20px rgba(1, 166, 255, 0.32);
 }
-.btn.primary:hover:not(:disabled) { background: linear-gradient(180deg, #14d2ff, #00b6e6); filter: brightness(1.06); }
+.btn.primary:hover:not(:disabled) { background: #0195e6; }
 
 .btn.ghost { background: none; border-color: transparent; box-shadow: none; color: var(--ink-2); }
-.btn.ghost:hover:not(:disabled) { background: rgba(9, 32, 42, 0.05); border-color: transparent; color: var(--ink); }
+.btn.ghost:hover:not(:disabled) { background: rgba(38, 37, 37, 0.05); border-color: transparent; color: var(--ink); }
 
 .btn.danger { color: var(--err-ink); border-color: rgba(240, 93, 104, 0.35); }
 .btn.danger:hover:not(:disabled) { background: rgba(240, 93, 104, 0.07); border-color: rgba(240, 93, 104, 0.5); }
@@ -251,17 +255,17 @@ table.apps {
   overflow: hidden;
 }
 table.apps th {
-  text-align: left; font-size: 11px; text-transform: uppercase;
-  letter-spacing: 0.08em; color: var(--ink-3); font-weight: 650;
+  text-align: left; font-size: 12.5px;
+  color: var(--ink-2); font-weight: 600;
   padding: 12px 16px; border-bottom: 1px solid var(--hair-2);
-  background: rgba(9, 32, 42, 0.02);
+  background: rgba(38, 37, 37, 0.02);
 }
 table.apps td {
   padding: 14px 16px; border-bottom: 1px solid var(--hair-2); vertical-align: middle;
 }
 table.apps tbody tr:last-child td { border-bottom: 0; }
 table.apps tr.row { transition: background 120ms var(--ease); }
-table.apps tr.row:hover td { background: #f6fcfe; cursor: pointer; }
+table.apps tr.row:hover td { background: #f4faff; cursor: pointer; }
 
 /* a table already inside a card keeps just its rows */
 fieldset.group table.apps {
@@ -273,14 +277,14 @@ fieldset.group table.apps td { padding: 13px 12px; }
 .app-name { font-weight: 600; }
 .app-url { color: var(--ink-3); font-size: 12px; }
 
-/* app avatars: the gradient square, now carrying the app's initial */
+/* app avatars: the brand-blue square, carrying the app's initial */
 .ico {
   width: 32px; height: 32px; border-radius: 9px; flex: none;
-  background: linear-gradient(135deg, var(--accent-2), var(--accent));
+  background: var(--accent);
   color: #ffffff; font-size: 14px; font-weight: 700;
   display: inline-flex; align-items: center; justify-content: center;
   vertical-align: middle; margin-right: 12px;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25), 0 2px 6px rgba(0, 182, 230, 0.25);
+  box-shadow: 0 2px 6px rgba(1, 166, 255, 0.25);
 }
 .appswitch .ico { width: 24px; height: 24px; border-radius: 7px; font-size: 11px; margin: 0; }
 
@@ -297,7 +301,7 @@ fieldset.group table.apps td { padding: 13px 12px; }
   background: var(--surface); color: var(--ink);
   transition: border-color 140ms var(--ease), box-shadow 140ms var(--ease);
 }
-.input:hover:not(:focus):not(:disabled) { border-color: rgba(9, 32, 42, 0.2); }
+.input:hover:not(:focus):not(:disabled) { border-color: rgba(38, 37, 37, 0.2); }
 .input:focus {
   outline: none; border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-dim);
@@ -308,7 +312,7 @@ fieldset.group table.apps td { padding: 13px 12px; }
 select.input {
   appearance: none; -webkit-appearance: none;
   padding-right: 34px; cursor: pointer;
-  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%234d6874' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236d6a6a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 12px center;
 }
@@ -327,8 +331,7 @@ fieldset.group {
   scroll-margin-top: 76px;
 }
 fieldset.group legend {
-  font-size: 11px; font-weight: 700; text-transform: uppercase;
-  letter-spacing: 0.09em; color: var(--accent-ink);
+  font-size: 13.5px; font-weight: 700; color: var(--accent-ink);
   padding: 0 8px; margin-left: -8px;
 }
 
@@ -348,8 +351,7 @@ aside.summary {
   position: sticky; top: 78px;
 }
 aside.summary h4 {
-  font-size: 11px; font-weight: 700; text-transform: uppercase;
-  letter-spacing: 0.09em; color: var(--ink-3); margin: 0 0 12px;
+  font-size: 13px; font-weight: 700; color: var(--ink-2); margin: 0 0 12px;
 }
 .kv {
   display: flex; justify-content: space-between; gap: 10px;
@@ -384,7 +386,7 @@ aside.summary h4 {
   /* an empty phone, waiting for its app */
   content: ""; display: block; width: 34px; height: 58px;
   margin: 0 auto 18px; border: 2px solid var(--ink-3); border-radius: 9px;
-  background: linear-gradient(180deg, var(--accent-dim), transparent 70%);
+  background: var(--accent-dim);
   opacity: 0.75;
 }
 .empty h3 { color: var(--ink); font-size: 17px; letter-spacing: -0.01em; margin: 0 0 6px; }
@@ -394,7 +396,7 @@ aside.summary h4 {
 
 .veil {
   position: fixed; inset: 0; z-index: 50;
-  background: rgba(9, 26, 33, 0.4);
+  background: rgba(38, 37, 37, 0.4);
   backdrop-filter: blur(3px);
   -webkit-backdrop-filter: blur(3px);
   display: flex; align-items: center; justify-content: center;
@@ -436,11 +438,11 @@ aside.summary h4 {
 .drop {
   border: 1.5px dashed var(--soft); border-radius: var(--r);
   padding: 20px 16px; text-align: center;
-  background: rgba(214, 247, 255, 0.25);
+  background: rgba(1, 166, 255, 0.04);
   font-size: 12.5px; color: var(--ink-2);
   transition: background 160ms var(--ease), border-color 160ms var(--ease);
 }
-.drop:hover { background: rgba(214, 247, 255, 0.45); }
+.drop:hover { background: rgba(1, 166, 255, 0.08); }
 .drop.filled { border-style: solid; border-color: var(--hair); background: var(--surface); }
 .drop b { display: block; color: var(--ink); font-size: 13.5px; margin-bottom: 3px; word-break: break-all; }
 .drop .btn { margin: 10px 4px 0; }
@@ -448,11 +450,11 @@ aside.summary h4 {
 /* ── the build console — the machine itself ────────────────────────────── */
 
 .console {
-  background: var(--console); color: #c4d6de;
-  border: 1px solid rgba(0, 204, 255, 0.14);
+  background: var(--console); color: #cfcdcd;
+  border: 1px solid rgba(1, 166, 255, 0.14);
   border-radius: var(--r-lg);
-  box-shadow: inset 0 1px 0 rgba(0, 204, 255, 0.12),
-    0 16px 40px -20px rgba(9, 32, 42, 0.5);
+  box-shadow: inset 0 1px 0 rgba(1, 166, 255, 0.12),
+    0 16px 40px -20px rgba(38, 37, 37, 0.5);
   padding: 16px 18px;
   font-size: 12px; line-height: 1.75;
   max-height: 460px; overflow-y: auto; overflow-x: hidden;
@@ -477,7 +479,7 @@ aside.summary h4 {
 .card:hover {
   border-color: var(--soft);
   transform: translateY(-2px);
-  box-shadow: 0 1px 2px rgba(9, 32, 42, 0.05), 0 18px 40px -20px rgba(0, 182, 230, 0.35);
+  box-shadow: 0 1px 2px rgba(38, 37, 37, 0.05), 0 18px 40px -20px rgba(1, 166, 255, 0.35);
 }
 .card .ttl { font-weight: 650; font-size: 13.5px; margin-bottom: 3px; word-break: break-all; letter-spacing: -0.005em; }
 .card .meta { font-size: 11.5px; color: var(--ink-3); margin-bottom: 12px; }
@@ -491,10 +493,7 @@ body.signed-out .content { padding: 0; max-width: none; }
 
 .authwrap {
   min-height: 100vh; display: grid; place-items: center; padding: 40px 20px;
-  background:
-    radial-gradient(560px 420px at 18% 8%, rgba(0, 204, 255, 0.1), transparent 65%),
-    radial-gradient(640px 480px at 85% 100%, rgba(108, 226, 255, 0.12), transparent 65%),
-    var(--bg);
+  background: var(--bg);
 }
 .authcard {
   width: 100%; max-width: 404px;
@@ -537,7 +536,7 @@ body.signed-out .content { padding: 0; max-width: none; }
 }
 .plancard .meter i {
   display: block; height: 100%; border-radius: 3px;
-  background: linear-gradient(90deg, var(--accent-2), var(--accent));
+  background: var(--accent);
   transition: width 400ms var(--ease);
 }
 .plancard.low .meter i { background: var(--warn); }
@@ -547,7 +546,7 @@ body.signed-out .content { padding: 0; max-width: none; }
 .avatar {
   width: 30px; height: 30px; border-radius: 50%;
   border: 1px solid var(--soft);
-  background: linear-gradient(180deg, #eafbff, var(--elevated));
+  background: var(--elevated);
   color: var(--accent-ink);
   font: inherit; font-size: 11px; font-weight: 700; cursor: pointer; flex: none;
   transition: border-color 160ms var(--ease), box-shadow 160ms var(--ease);
@@ -564,8 +563,7 @@ body.signed-out .content { padding: 0; max-width: none; }
 }
 .plan:hover { border-color: var(--soft); }
 .plan-name {
-  font-size: 11px; font-weight: 700; text-transform: uppercase;
-  letter-spacing: 0.09em; color: var(--accent-ink);
+  font-size: 13.5px; font-weight: 700; color: var(--accent-ink);
 }
 .plan-price { font-size: 26px; font-weight: 700; margin: 8px 0 2px; letter-spacing: -0.03em; }
 .plan-blurb { font-size: 12.5px; color: var(--ink-3); }
@@ -576,8 +574,7 @@ body.signed-out .content { padding: 0; max-width: none; }
   padding: 18px; margin-bottom: 14px;
 }
 .paycard-h {
-  font-size: 11px; text-transform: uppercase; letter-spacing: 0.09em;
-  color: var(--ink-3); margin: 0 0 12px; font-weight: 700;
+  font-size: 13px; color: var(--ink-2); margin: 0 0 12px; font-weight: 700;
 }
 
 /* the pretend phone — drawn as a mockup, so nobody wonders if it moves money */
@@ -587,8 +584,7 @@ body.signed-out .content { padding: 0; max-width: none; }
   border-radius: 12px; padding: 14px; font-size: 13px; margin: 12px 0;
 }
 .handset-from {
-  font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.08em;
-  color: var(--accent-ink); font-weight: 700; margin-bottom: 6px;
+  font-size: 12px; color: var(--accent-ink); font-weight: 700; margin-bottom: 6px;
 }
 .handset-actions { display: flex; gap: 8px; }
 .handset-actions .btn { flex: 1; justify-content: center; }
