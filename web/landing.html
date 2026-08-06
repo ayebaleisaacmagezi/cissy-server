@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>CissyWeb2App — your website as an Android app</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -63,19 +64,25 @@
       display: flex; align-items: center; justify-content: space-between;
       height: 68px;
     }
-    .logo { font-size: 1.35rem; font-weight: 800; color: var(--primary); letter-spacing: -0.02em; }
-    .logo span { color: var(--dark); }
+    .logo { display: inline-flex; align-items: center; }
+    .logo img { height: 46px; width: auto; display: block; }
     .nav-links {
       display: flex; gap: 28px; list-style: none;
       font-weight: 500; color: #4a4747; font-size: 0.95rem;
     }
     .nav-links a:hover { color: var(--primary); }
     .nav-btns { display: flex; gap: 12px; align-items: center; }
+    .nav-toggle {
+      display: none; background: none; border: none; cursor: pointer;
+      color: var(--dark); padding: 6px; border-radius: 8px;
+      align-items: center; justify-content: center;
+    }
+    .nav-toggle:hover { color: var(--primary); }
 
     .btn {
       padding: 10px 22px; border-radius: 999px;
       font: inherit; font-weight: 600; font-size: 0.9rem; cursor: pointer;
-      transition: all 0.2s ease; border: none;
+      transition: all 0.2s ease; border: none; white-space: nowrap;
       display: inline-flex; align-items: center; justify-content: center; gap: 8px;
     }
     .btn-text { background: transparent; color: var(--dark); }
@@ -286,6 +293,9 @@
       display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 30px;
       margin-bottom: 50px; position: relative; z-index: 2;
     }
+    .footer-brand { display: inline-flex; align-items: center; gap: 10px; }
+    .footer-brand img { height: 38px; width: auto; display: block; }
+    .footer-brand span { font-size: 1.25rem; font-weight: 800; color: var(--white); letter-spacing: -0.02em; }
     .footer-col h5 { color: var(--white); font-size: 1rem; margin-bottom: 18px; font-weight: 700; }
     .footer-col ul { list-style: none; display: flex; flex-direction: column; gap: 10px; }
     .footer-col ul a { color: #b0adad; }
@@ -333,12 +343,40 @@
       .footer-grid { grid-template-columns: 1fr 1fr; }
     }
     @media (max-width: 600px) {
-      .hero h1 { font-size: 2rem; }
+      /* the navbar: everything on one line, links behind the menu button */
+      .navbar { height: 60px; gap: 8px; }
+      .logo img { height: 36px; }
+      .nav-btns { gap: 6px; }
+      .btn { padding: 8px 14px; font-size: 0.85rem; }
+      .nav-toggle { display: inline-flex; }
+      .nav-links {
+        display: none; position: absolute; top: 100%; left: 0; right: 0;
+        flex-direction: column; gap: 0;
+        background: var(--white); border-bottom: 1px solid var(--border);
+        padding: 6px 20px 12px;
+        box-shadow: 0 18px 28px -16px rgba(38, 37, 37, 0.2);
+      }
+      header.menu-open .nav-links { display: flex; }
+      .nav-links a { display: block; padding: 11px 4px; }
+
+      /* the hero: let the headline wrap naturally, tighten the badge bar */
+      .hero { padding: 45px 0 35px; }
+      .hero h1 { font-size: 1.9rem; }
+      .hero h1 br { display: none; }
+      .hero-subtitle { font-size: 0.95rem; }
+      .badge-bar { font-size: 0.8rem; padding: 7px 16px; gap: 8px 12px; }
       .features-grid { grid-template-columns: 1fr; }
-      .nav-links { display: none; }
-      .cta-banner { flex-direction: column; text-align: center; }
+      .cta-banner { flex-direction: column; text-align: center; padding: 30px 24px; }
+      .cta-actions { flex-wrap: wrap; justify-content: center; }
       .url-box { flex-direction: column; border-radius: 20px; gap: 6px; }
       .url-box input { padding: 12px 18px; }
+      .section-header h2 { font-size: 1.6rem; }
+
+      /* the footer: one column, centered bottom line */
+      footer { padding: 50px 0 25px; }
+      .footer-grid { grid-template-columns: 1fr; gap: 30px; margin-bottom: 35px; }
+      .footer-watermark { font-size: 4rem; letter-spacing: 6px; }
+      .footer-bottom { justify-content: center; text-align: center; }
     }
 
     @media (prefers-reduced-motion: reduce) {
@@ -351,7 +389,7 @@
   <!-- header -->
   <header>
     <div class="container navbar">
-      <a href="/" class="logo">Cissy<span>Web2App</span></a>
+      <a href="/" class="logo"><img src="/logo.png" alt="Web2App"></a>
       <ul class="nav-links">
         <li><a href="#how">How it works</a></li>
         <li><a href="#features">Features</a></li>
@@ -361,6 +399,9 @@
       <div class="nav-btns">
         <a href="/app" class="btn btn-text">Log in</a>
         <a href="/app#/signup" class="btn btn-primary">Start free</a>
+        <button class="nav-toggle" aria-label="Menu" aria-expanded="false" onclick="toggleMenu(this)">
+          <span class="material-symbols-outlined" aria-hidden="true">menu</span>
+        </button>
       </div>
     </div>
   </header>
@@ -374,7 +415,7 @@
         <span>• Pay by mobile money</span>
       </div>
 
-      <h1>Your website as an Android app,<br>in three steps</h1>
+      <h1>Your website as an Android app, <br>in three steps</h1>
       <p class="hero-subtitle">Enter a URL, press Build, download a signed APK or AAB. The app shows your live site, so it is always up to date.</p>
 
       <form class="url-box" action="/app" onsubmit="location.href='/app#/signup'; return false;">
@@ -655,7 +696,7 @@
     <div class="container">
       <div class="footer-grid">
         <div>
-          <a href="/" class="logo" style="color: var(--sky-light);">Cissy<span style="color:#fff">Web2App</span></a>
+          <a href="/" class="footer-brand"><img src="/logo-icon.png" alt=""><span>Web2App</span></a>
           <p style="font-size: 0.85rem; margin-top: 10px; max-width: 320px;">Turns your website into an Android app you can put on Google Play, and hands you the iOS project to build on a Mac.</p>
         </div>
 
@@ -688,6 +729,21 @@
     function toggleFaq(element) {
       element.parentElement.classList.toggle('active');
     }
+
+    /* The mobile menu: the button flips it open, choosing a link closes it. */
+    function toggleMenu(btn) {
+      const open = document.querySelector('header').classList.toggle('menu-open');
+      btn.setAttribute('aria-expanded', open);
+      btn.querySelector('span').textContent = open ? 'close' : 'menu';
+    }
+    document.querySelectorAll('.nav-links a').forEach((link) => {
+      link.addEventListener('click', () => {
+        document.querySelector('header').classList.remove('menu-open');
+        const toggle = document.querySelector('.nav-toggle');
+        toggle.setAttribute('aria-expanded', 'false');
+        toggle.querySelector('span').textContent = 'menu';
+      });
+    });
 
     /* ── animate on scroll ──────────────────────────────────────────────
        Everything here is additive: with reduced motion, no JS, or an old

@@ -268,7 +268,7 @@ function authScreen(title, subtitle, rows, footer) {
     el('div', { class: 'authwrap' }, [
       el('div', { class: 'authcard' }, [
         el('div', { class: 'authbrand' }, [
-          'Cissy', el('span', { text: 'Web2App' }),
+          el('img', { src: '/logo.png', alt: 'Web2App' }),
         ]),
         el('h2', { class: 'authtitle', text: title }),
         subtitle ? el('p', { class: 'authsub', text: subtitle }) : null,
