@@ -1028,6 +1028,79 @@ class MainActivity : FlutterActivity()
 """
 
 
+# ── the launch screen ────────────────────────────────────────────────────
+
+# The resource name the uploaded splash is copied in under. Fixed rather than
+# derived from the upload's filename, because Android resource names allow
+# only lowercase letters, digits and underscores.
+SPLASH_DRAWABLE = "cissy_splash"
+
+
+def launch_background(has_splash: bool) -> str:
+    """The window Android draws between tapping the icon and Flutter's first
+    frame.
+
+    With a splash image this IS the splash, so the app opens straight into it
+    with no white flash in between. `fill` gravity because an XML bitmap
+    cannot centre-crop; the in-app splash widget (BoxFit.cover) takes over on
+    the first Flutter frame, so any stretch lasts a fraction of a second.
+    """
+    if not has_splash:
+        # The Flutter scaffold's own default.
+        return """<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@android:color/white" />
+</layer-list>
+"""
+    return f"""<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <bitmap
+            android:gravity="fill"
+            android:src="@drawable/{SPLASH_DRAWABLE}" />
+    </item>
+</layer-list>
+"""
+
+
+def splash_icon_drawable() -> str:
+    """A fully transparent drawable for the Android 12+ system splash icon.
+
+    From Android 12 the OS itself draws a launch screen — by default the app
+    icon centred on a plain background — before the app process even starts,
+    and no app can opt out of that phase. What it CAN do is hand the phase a
+    transparent icon, which turns "the icon flashes, then the splash" into
+    "a plain surface, then the splash".
+    """
+    return """<?xml version="1.0" encoding="utf-8"?>
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@android:color/transparent" />
+</shape>
+"""
+
+
+def styles_v31(*, night: bool) -> str:
+    """LaunchTheme for Android 12+, where the system splash exists.
+
+    Only LaunchTheme is overridden; NormalTheme still comes from the
+    scaffold's values/styles.xml. windowBackground stays the splash image so
+    the moment the system phase ends the splash is already on screen.
+    """
+    parent = "Theme.Black.NoTitleBar" if night else "Theme.Light.NoTitleBar"
+    background = "@android:color/black" if night else "@android:color/white"
+    return f"""<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="LaunchTheme" parent="@android:style/{parent}">
+        <item name="android:windowSplashScreenBackground">{background}</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/{SPLASH_DRAWABLE}_icon</item>
+        <item name="android:windowBackground">@drawable/launch_background</item>
+        <item name="android:forceDarkAllowed">false</item>
+    </style>
+</resources>
+"""
+
+
 # ── ios ──────────────────────────────────────────────────────────────────
 
 

@@ -6,12 +6,16 @@ broken dependency rather than a version mismatch, and it happens before any app
 code compiles.
 """
 
+import dataclasses
 import shutil
 import tempfile
 import unittest
 from pathlib import Path
 
-from cissy.generate import PINNED_AGP, PINNED_GRADLE, _pin_android_toolchain
+from cissy import template
+from cissy.config import AppConfig
+from cissy.generate import PINNED_AGP, PINNED_GRADLE, _apply_launch_screen, _pin_android_toolchain
+from cissy.store import ProjectStore
 
 AGP_9_SETTINGS = """\
 pluginManagement {
@@ -122,6 +126,100 @@ class PinTest(unittest.TestCase):
         self.write(AGP_9_SETTINGS, wrapper=None)
         self.pin()
         self.assertIn(f'version "{PINNED_AGP}"', self.settings.read_text())
+
+
+class LaunchScreenTest(unittest.TestCase):
+    """The tap-to-app moment: splash straight away, no flash of the icon.
+
+    The launch window must carry the splash image itself, and on Android 12+
+    the system splash must be handed a transparent icon — including in dark
+    mode, where `values-night` would otherwise outrank `values-v31` and bring
+    the icon back.
+    """
+
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp(prefix="cissy_launch_"))
+        self.store = ProjectStore(self.root)
+        self.config = AppConfig(
+            id="shop",
+            name="Shop",
+            website_url="https://shop.example.com",
+            android_package_id="com.example.shop",
+            ios_bundle_id="com.example.shop",
+            splash_file="splash.png",
+        )
+        self.project = self.root / "shop" / "generated"
+        (self.project / "android").mkdir(parents=True)
+
+    def tearDown(self):
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    @property
+    def res(self) -> Path:
+        return self.project / "android" / "app" / "src" / "main" / "res"
+
+    def upload_splash(self, name: str = "splash.png") -> None:
+        assets = self.store.assets_dir("shop")
+        assets.mkdir(parents=True, exist_ok=True)
+        (assets / name).write_bytes(b"not-really-a-png")
+
+    def apply(self, config: AppConfig | None = None) -> None:
+        _apply_launch_screen(config or self.config, self.store, self.project)
+
+    def test_the_launch_window_is_the_splash_image(self):
+        self.upload_splash()
+        self.apply()
+        for variant in ("drawable", "drawable-v21"):
+            contents = (self.res / variant / "launch_background.xml").read_text()
+            self.assertIn(template.SPLASH_DRAWABLE, contents)
+        self.assertTrue((self.res / "drawable" / "cissy_splash.png").is_file())
+
+    def test_android_12_gets_a_transparent_icon_in_both_modes(self):
+        self.upload_splash()
+        self.apply()
+        for variant in ("values-v31", "values-night-v31"):
+            contents = (self.res / variant / "styles.xml").read_text()
+            self.assertIn("windowSplashScreenAnimatedIcon", contents)
+            self.assertIn(f"{template.SPLASH_DRAWABLE}_icon", contents)
+        icon = (self.res / "drawable" / "cissy_splash_icon.xml").read_text()
+        self.assertIn("transparent", icon)
+
+    def test_no_splash_means_the_stock_launch_screen(self):
+        self.apply()
+        contents = (self.res / "drawable" / "launch_background.xml").read_text()
+        self.assertNotIn(template.SPLASH_DRAWABLE, contents)
+        self.assertFalse((self.res / "values-v31" / "styles.xml").exists())
+
+    def test_removing_the_splash_reverts_everything(self):
+        # The scaffold survives between builds, so a removed splash has to
+        # take its overrides with it rather than leaving a stale launch screen.
+        self.upload_splash()
+        self.apply()
+        without = dataclasses.replace(self.config, splash_file=None)
+        self.apply(without)
+        contents = (self.res / "drawable" / "launch_background.xml").read_text()
+        self.assertNotIn(template.SPLASH_DRAWABLE, contents)
+        self.assertFalse(list((self.res / "drawable").glob("cissy_splash.*")))
+        self.assertFalse((self.res / "values-v31" / "styles.xml").exists())
+        self.assertFalse((self.res / "values-night-v31" / "styles.xml").exists())
+
+    def test_a_jpeg_upload_is_stored_as_jpg(self):
+        # aapt does not accept a .jpeg resource file name.
+        config = dataclasses.replace(self.config, splash_file="splash.jpeg")
+        self.upload_splash("splash.jpeg")
+        self.apply(config)
+        self.assertTrue((self.res / "drawable" / "cissy_splash.jpg").is_file())
+        self.assertFalse((self.res / "drawable" / "cissy_splash.jpeg").exists())
+
+    def test_a_changed_extension_leaves_one_resource_not_two(self):
+        # Two files sharing one resource name is a hard aapt error.
+        self.upload_splash()
+        self.apply()
+        config = dataclasses.replace(self.config, splash_file="splash.jpg")
+        self.upload_splash("splash.jpg")
+        self.apply(config)
+        found = sorted(p.name for p in (self.res / "drawable").glob("cissy_splash.*"))
+        self.assertEqual(found, ["cissy_splash.jpg"])
 
 
 if __name__ == "__main__":

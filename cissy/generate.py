@@ -55,6 +55,7 @@ def generate(
         directory / "android" / "app" / "src" / "main" / "AndroidManifest.xml",
         template.android_manifest(config),
     )
+    _apply_launch_screen(config, store, directory)
     _write(directory / "android" / "gradle.properties", template.gradle_properties())
     _write_main_activity(directory, config)
     _patch_info_plist(directory, config, on_log)
@@ -270,6 +271,72 @@ def _copy_assets(
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source, target)
     return f"assets/{config.splash_file}"
+
+
+def _apply_launch_screen(
+    config: AppConfig, store: ProjectStore, directory: Path
+) -> None:
+    """Make the tap-to-app moment show the splash, not a flash of the icon.
+
+    Two separate mechanisms, because Android has two launch phases:
+
+    - The launch window (all versions): `launch_background.xml` is rewritten
+      to draw the splash image, so the first frame the app itself shows is
+      already the splash rather than a white screen.
+    - The system splash (Android 12+): the OS draws the launcher icon before
+      the app starts and cannot be skipped, but a values-v31 LaunchTheme
+      hands it a transparent icon, so that phase is a plain surface instead
+      of the icon.
+
+    With no splash image everything is put back to the scaffold's stock
+    behaviour — the overrides are removed, not left half-applied, because the
+    scaffold survives between builds.
+    """
+    res = directory / "android" / "app" / "src" / "main" / "res"
+    if not (directory / "android").is_dir():
+        return
+
+    source = (
+        store.assets_dir(config.id) / config.splash_file
+        if config.splash_file
+        else None
+    )
+    has_splash = source is not None and source.is_file()
+
+    drawable = res / "drawable"
+    drawable.mkdir(parents=True, exist_ok=True)
+
+    # The extension may have changed between uploads (png today, jpg
+    # tomorrow), and two files with one resource name is a build error.
+    for stale in drawable.glob(f"{template.SPLASH_DRAWABLE}.*"):
+        stale.unlink()
+
+    if has_splash:
+        # aapt knows .png and .jpg; a .jpeg upload is stored under .jpg.
+        suffix = ".jpg" if source.suffix.lower() == ".jpeg" else source.suffix.lower()
+        shutil.copy2(source, drawable / f"{template.SPLASH_DRAWABLE}{suffix}")
+        _write(
+            drawable / f"{template.SPLASH_DRAWABLE}_icon.xml",
+            template.splash_icon_drawable(),
+        )
+    else:
+        icon_drawable = drawable / f"{template.SPLASH_DRAWABLE}_icon.xml"
+        if icon_drawable.is_file():
+            icon_drawable.unlink()
+
+    background = template.launch_background(has_splash)
+    for variant in ("drawable", "drawable-v21"):
+        _write(res / variant / "launch_background.xml", background)
+
+    # Both v31 qualifiers, because in dark mode `values-night` outranks
+    # `values-v31` — without the night-v31 file, dark-mode phones would show
+    # the icon flash this exists to remove.
+    for variant, night in (("values-v31", False), ("values-night-v31", True)):
+        path = res / variant / "styles.xml"
+        if has_splash:
+            _write(path, template.styles_v31(night=night))
+        elif path.is_file():
+            path.unlink()
 
 
 def _copy_icon(config: AppConfig, store: ProjectStore, directory: Path) -> str | None:

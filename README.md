@@ -20,8 +20,12 @@ Mobile-money subscriptions through Collecto, running against a simulator until
 there is an account — see below.
 
 Not yet: there are no user accounts, so the subscription is server-wide rather
-than per-customer. The splash image is stored but not applied, and old build
-artifacts are never deleted.
+than per-customer. Old build artifacts are never deleted.
+
+The splash image is applied everywhere it can be: it is the Android launch
+window itself, so the app opens straight into it, and on Android 12+ the
+system splash gets a transparent icon so the launcher icon no longer flashes
+before it.
 
 ## Requirements
 
