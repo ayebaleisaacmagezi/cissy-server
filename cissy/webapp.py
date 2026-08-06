@@ -35,6 +35,10 @@ from .store import ProjectStore, Workspaces
 from . import accounts as accounts_mod
 from . import generate, toolchain
 
+# Windows' MIME registry predates WebP; without this the logos are served as
+# application/octet-stream.
+mimetypes.add_type("image/webp", ".webp")
+
 # Routes anybody may reach without being signed in. Everything else needs a
 # session. An allow-list rather than a deny-list, because the failure mode of
 # forgetting to add a route here is a locked door, and the failure mode of
