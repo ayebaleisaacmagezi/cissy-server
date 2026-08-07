@@ -80,6 +80,7 @@ const ICONS = {
   identity: 'person',
   webview: 'language',
   branding: 'image',
+  studio: 'dashboard_customize',
   features: 'tune',
   offline: 'cloud_off',
   signing: 'key',
@@ -456,11 +457,36 @@ const SECTIONS = [
   ['identity', 'Identity', 'identity'],
   ['webview', 'WebView', 'webview'],
   ['branding', 'Branding', 'branding'],
+  ['studio', 'Studio', 'studio'],
   ['features', 'Features', 'features'],
   ['offline', 'Offline', 'offline'],
   ['signing', 'Signing', 'signing'],
   ['build', 'Build', 'build'],
 ];
+
+/* Sidebar section navigation. The sections only exist on the app page, so a
+ * click from anywhere else (a build page, say) goes to the app page first and
+ * scrolls once it has rendered. */
+let pendingSection = null;
+
+function goToSection(id) {
+  const target = document.getElementById('sec-' + id);
+  if (target) {
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    markSection(id);
+    return;
+  }
+  if (state.app) {
+    pendingSection = id;
+    go('#/app/' + state.app.id);
+  }
+}
+
+function markSection(id) {
+  document.querySelectorAll('#side-nav .nav-item[data-sec]').forEach((item) => {
+    item.classList.toggle('active', item.dataset.sec === id);
+  });
+}
 
 function planCard() {
   const user = state.user;
@@ -542,10 +568,8 @@ function renderSidebar() {
       ...SECTIONS.map(([id, label, glyph]) =>
         el('button', {
           class: 'nav-item',
-          onclick: () => {
-            const target = document.getElementById('sec-' + id);
-            if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-          },
+          'data-sec': id,
+          onclick: () => goToSection(id),
         }, [icon(glyph), label]),
       ),
     ]),
@@ -753,6 +777,26 @@ async function showApp(appId) {
 
   renderTopbar();
   renderSummary();
+
+  // A click from another page (a build, say) lands here with a section owed.
+  if (pendingSection) {
+    const target = document.getElementById('sec-' + pendingSection);
+    if (target) target.scrollIntoView({ block: 'start' });
+    markSection(pendingSection);
+    pendingSection = null;
+  }
+
+  // Keep the sidebar honest while scrolling: the topmost visible section is
+  // the highlighted one.
+  if (state.spy) state.spy.disconnect();
+  state.spy = new IntersectionObserver((entries) => {
+    const visible = entries
+      .filter((entry) => entry.isIntersecting)
+      .sort((a, b) => a.target.getBoundingClientRect().top
+        - b.target.getBoundingClientRect().top);
+    if (visible.length) markSection(visible[0].target.id.replace('sec-', ''));
+  }, { rootMargin: '-10% 0px -65% 0px' });
+  main.querySelectorAll('fieldset.group').forEach((group) => state.spy.observe(group));
 }
 
 function fieldset(id, legend, children) {
