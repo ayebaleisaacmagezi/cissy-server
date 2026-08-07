@@ -263,11 +263,11 @@ table.apps tr.row { transition: background 120ms var(--ease); }
 table.apps tr.row:hover td { background: #f4faff; cursor: pointer; }
 
 /* a table already inside a card keeps just its rows */
-fieldset.group table.apps {
+.group table.apps {
   border: 0; border-radius: 0; box-shadow: none; background: none;
 }
-fieldset.group table.apps th { background: none; padding: 0 12px 10px; }
-fieldset.group table.apps td { padding: 13px 12px; }
+.group table.apps th { background: none; padding: 0 12px 10px; }
+.group table.apps td { padding: 13px 12px; }
 
 .app-name { font-weight: 600; }
 .app-url { color: var(--ink-3); font-size: 12px; }
@@ -315,8 +315,8 @@ select.input {
 .hint { font-size: 11.5px; color: var(--ink-3); margin-top: 5px; line-height: 1.5; }
 .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 
-/* config sections: cards, with the legend as a section header */
-fieldset.group {
+/* config sections: one card per page */
+.group {
   border: 1px solid var(--hair);
   border-radius: var(--r-lg);
   background: var(--surface);
@@ -325,9 +325,18 @@ fieldset.group {
   margin: 0 0 18px;
   scroll-margin-top: 76px;
 }
-fieldset.group legend {
+.group-title {
   font-size: 13.5px; font-weight: 700; color: var(--accent-ink);
-  padding: 0 8px; margin-left: -8px;
+  margin: 0 0 14px;
+}
+
+/* a full page: heading, one card, then Back and Next */
+.page { max-width: 1060px; }
+.page-head .sec { margin-bottom: 4px; }
+.page-head .sub { margin-bottom: 16px; }
+.pager {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-top: 4px; padding-top: 14px;
 }
 
 .checks { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 18px; margin-bottom: 14px; }
@@ -608,12 +617,54 @@ body.signed-out .content { padding: 0; max-width: none; }
   }
 }
 
-/* ── the app studio ────────────────────────────────────────────────────── */
+/* ── the app studio ──────────────────────────────────────────────────────
+ * Three panels: the module library, the phone, the knobs. The phone sits on
+ * the stage in the middle because it is the thing being made. */
 
-.studio {
-  display: grid; grid-template-columns: 1fr 240px; gap: 26px; align-items: start;
+.studio-full {
+  display: grid; grid-template-columns: 285px 1fr 300px;
+  gap: 20px; align-items: start;
 }
-.studio-side { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.studio-full .group { margin-bottom: 0; }
+.studio-stage {
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  padding: 26px 10px;
+  background:
+    radial-gradient(circle at 50% 42%, rgba(1, 166, 255, 0.07), transparent 70%);
+  position: sticky; top: 78px;
+}
+
+.modlib-card { padding-bottom: 16px; }
+.modgroup {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.04em;
+  text-transform: uppercase; color: var(--ink-3);
+  margin: 14px 0 8px;
+}
+.modgroup:first-child { margin-top: 0; }
+.modtile {
+  display: flex; align-items: center; gap: 11px; width: 100%;
+  padding: 9px 11px; margin-bottom: 6px; text-align: left;
+  border: 1px solid var(--hair); border-radius: var(--r);
+  background: var(--surface); color: var(--ink);
+  font: inherit; cursor: pointer;
+  transition: border-color 120ms var(--ease), background 120ms var(--ease);
+}
+.modtile:hover:not(.locked):not(.soon) { border-color: rgba(38, 37, 37, 0.25); }
+.modtile.on { border-color: var(--accent); background: var(--accent-dim); }
+.modtile .material-symbols-outlined {
+  font-size: 19px; color: var(--ink-3); flex: none;
+}
+.modtile.on .material-symbols-outlined { color: var(--accent-ink); }
+.modtile .modtxt { min-width: 0; }
+.modtile b { display: block; font-size: 12.5px; }
+.modtile .hint { margin: 1px 0 0; }
+.modtile.locked { cursor: default; border-color: var(--hair); background: var(--bg); }
+.modtile.soon { cursor: default; opacity: 0.55; }
+.modtile.soon::after {
+  content: 'soon'; margin-left: auto; font-size: 10px; font-weight: 700;
+  color: var(--ink-3); border: 1px solid var(--hair); border-radius: 999px;
+  padding: 1px 7px;
+}
 
 .colorrow { display: flex; gap: 10px; align-items: center; }
 .colorwell {
@@ -633,20 +684,38 @@ body.signed-out .content { padding: 0; max-width: none; }
   background: var(--surface); border: 9px solid var(--console);
   border-radius: 28px; overflow: hidden; box-shadow: var(--shadow-2);
 }
+.phone-mock.lg {
+  width: 258px; height: 532px; border-width: 10px; border-radius: 36px;
+  box-shadow: 0 18px 44px rgba(20, 40, 60, 0.22);
+}
 .pm-status {
   display: flex; justify-content: space-between; align-items: center;
   padding: 7px 14px 0; font-size: 10px; font-weight: 600;
 }
 .pm-status .material-symbols-outlined { font-size: 12px; }
+.pm-sicons { display: inline-flex; gap: 3px; }
 .pm-appbar {
+  display: flex; justify-content: space-between; align-items: center; gap: 8px;
   padding: 10px 14px; font-weight: 700; font-size: 13px;
   border-bottom: 1px solid var(--hair-2);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+.pm-title {
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
+}
+.pm-abx { display: inline-flex; gap: 9px; flex: none; color: var(--ink-2); }
+.pm-abx .material-symbols-outlined { font-size: 15px; }
 .pm-body { flex: 1; padding: 12px; overflow: hidden; }
-.pm-hero { height: 72px; border-radius: 8px; margin-bottom: 10px; }
+.pm-hero {
+  height: 78px; border-radius: 10px; margin-bottom: 10px;
+  display: flex; align-items: flex-end; padding: 8px;
+}
+.pm-hero-dot { width: 26px; height: 26px; border-radius: 8px; display: block; }
 .pm-line { height: 10px; border-radius: 6px; background: #edf1f5; margin-bottom: 7px; }
 .pm-line.short { width: 60%; }
+.pm-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+.pm-card {
+  border: 1px solid var(--hair-2); border-radius: 8px; padding: 8px 8px 2px;
+}
 .pm-chip { width: 92px; height: 26px; border-radius: 999px; margin-top: 12px; }
 .pm-nav { display: flex; border-top: 1px solid var(--hair-2); padding: 6px 2px 8px; }
 .pm-item {
@@ -661,6 +730,10 @@ body.signed-out .content { padding: 0; max-width: none; }
 }
 .pm-item.on { color: var(--ink); }
 
+@media (max-width: 1080px) {
+  .studio-full { grid-template-columns: 1fr 1fr; }
+  .studio-stage { grid-column: 1 / -1; grid-row: 1; position: static; padding: 14px 0; }
+}
 @media (max-width: 860px) {
-  .studio { grid-template-columns: 1fr; }
+  .studio-full { grid-template-columns: 1fr; }
 }

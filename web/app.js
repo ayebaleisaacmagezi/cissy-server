@@ -37,6 +37,8 @@ const state = {
   apps: [],
   app: null,
   builds: [],
+  draft: null,         // unsaved edits, kept while moving between an app's pages
+  section: null,       // which of the app's pages is open
   dirty: false,
   health: null,
   user: null,          // whoever is signed in, from /api/auth/session
@@ -452,47 +454,25 @@ async function showLogin() {
 
 /* ── sidebar ─────────────────────────────────────────────────────────── */
 
-const SECTIONS = [
-  ['overview', 'Overview', 'overview'],
-  ['identity', 'Identity', 'identity'],
-  ['webview', 'WebView', 'webview'],
-  ['branding', 'Branding', 'branding'],
-  ['studio', 'Studio', 'studio'],
-  ['features', 'Features', 'features'],
-  ['offline', 'Offline', 'offline'],
-  ['signing', 'Signing', 'signing'],
-  ['build', 'Build', 'build'],
+/* Each entry is a full page of its own: [id, label, icon, subtitle]. The order
+ * here is the order the Next buttons at the foot of each page walk through. */
+const APP_PAGES = [
+  ['overview', 'Overview', 'overview', 'Builds, artifacts and the state of this app.'],
+  ['identity', 'Identity', 'identity', 'What the app is called, and the IDs the stores know it by.'],
+  ['webview', 'WebView', 'webview', 'The website the app wraps, and how it behaves.'],
+  ['branding', 'Branding', 'branding', 'The icon and the splash screen.'],
+  ['studio', 'Studio', 'studio', 'Modules, theme and navigation — with a live preview.'],
+  ['features', 'Features', 'features', 'The fine print for every module the app ships with.'],
+  ['offline', 'Offline', 'offline', 'What the app does when the connection is gone.'],
+  ['signing', 'Signing', 'signing', 'The key that proves every release comes from you.'],
+  ['build', 'Build', 'build', 'Turn the configuration into an installable app.'],
 ];
-
-/* Sidebar section navigation. The sections only exist on the app page, so a
- * click from anywhere else (a build page, say) goes to the app page first and
- * scrolls once it has rendered. */
-let pendingSection = null;
-
-function goToSection(id) {
-  const target = document.getElementById('sec-' + id);
-  if (target) {
-    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    markSection(id);
-    return;
-  }
-  if (state.app) {
-    pendingSection = id;
-    go('#/app/' + state.app.id);
-  }
-}
-
-function markSection(id) {
-  document.querySelectorAll('#side-nav .nav-item[data-sec]').forEach((item) => {
-    item.classList.toggle('active', item.dataset.sec === id);
-  });
-}
 
 function planCard() {
   const user = state.user;
   if (!user) return null;
-  const left = user.builds_left;
-  const total = user.builds_limit;
+  const left = user.builds_left ?? 0;
+  const total = user.builds_limit ?? 0;
   const share = total ? Math.max(0, Math.min(100, (left / total) * 100)) : 0;
   const tone = left === 0 ? 'out' : left <= 1 ? 'low' : '';
 
@@ -513,14 +493,14 @@ function planCard() {
 function renderAccount() {
   const box = clear(document.getElementById('account'));
   if (!state.user) return;
-  const initials = state.user.name.trim().split(/\s+/).slice(0, 2)
+  const initials = (state.user.name || '?').trim().split(/\s+/).slice(0, 2)
     .map((part) => part[0]).join('').toUpperCase();
 
   box.append(el('button', {
     class: 'avatar', text: initials, title: state.user.name,
     onclick: () => openModal(state.user.name, state.user.phone, [
       kv('Plan', state.user.plan === 'trial' ? 'Free trial' : state.user.plan),
-      kv('Builds left', `${state.user.builds_left} of ${state.user.builds_limit}`),
+      kv('Builds left', `${state.user.builds_left ?? 0} of ${state.user.builds_limit ?? 0}`),
       state.user.plan_until ? kv('Renews', shortDate(state.user.plan_until)) : null,
     ].filter(Boolean), [
       el('button', { class: 'btn', text: 'Log out', onclick: logout }),
@@ -565,11 +545,10 @@ function renderSidebar() {
     ]),
     el('div', { class: 'nav-group' }, [
       el('div', { class: 'nav-label', text: 'App' }),
-      ...SECTIONS.map(([id, label, glyph]) =>
+      ...APP_PAGES.map(([id, label, glyph]) =>
         el('button', {
-          class: 'nav-item',
-          'data-sec': id,
-          onclick: () => goToSection(id),
+          class: 'nav-item' + (state.section === id ? ' active' : ''),
+          onclick: () => go(`#/app/${state.app.id}/${id}`),
         }, [icon(glyph), label]),
       ),
     ]),
@@ -611,7 +590,7 @@ async function showList() {
           el('td', {}, [appIcon(app.name), el('span', { class: 'app-name', text: app.name })]),
           el('td', { class: 'app-url mono', text: hostOf(app.website_url) }),
           el('td', {}, [
-            el('div', { text: `v${app.version_name} (${app.version_code})` }),
+            el('div', { text: `v${app.version_name || '1.0.0'} (${app.version_code ?? 1})` }),
             el('div', { class: 'app-url', text: 'Edited ' + shortDate(app.updated_at) }),
           ]),
           el('td', {}, [signingPill(app)]),
@@ -694,63 +673,48 @@ function field(label, input, hint) {
 
 /* ── app page ────────────────────────────────────────────────────────── */
 
-async function showApp(appId) {
+async function showAppPage(appId, section) {
   const [{ app }, { builds }] = await Promise.all([
     api('GET', '/api/apps/' + appId),
     api('GET', `/api/apps/${appId}/builds`),
   ]);
   state.app = app;
   state.builds = builds;
-  state.dirty = false;
+  state.section = APP_PAGES.some(([id]) => id === section) ? section : 'overview';
 
-  document.getElementById('crumb').textContent = app.name;
+  // The draft outlives any single page, so edits survive moving between them.
+  // It belongs to the app: opening a different app starts a fresh one.
+  if (!state.draft || state.draft.id !== app.id) {
+    state.draft = { ...app };
+    state.dirty = false;
+  }
+  const draft = state.draft;
+
+  const [, label, , subtitle] = APP_PAGES.find(([id]) => id === state.section);
+  document.getElementById('crumb').textContent = `${app.name} · ${label}`;
   renderSidebar();
 
-  const draft = { ...app };
-  const content = clear(document.getElementById('content'));
-  const summary = el('aside', { class: 'summary' });
-  const main = el('div');
-  content.append(el('div', { class: 'cols' }, [main, summary]));
-
-  const markDirty = () => { state.dirty = true; renderTopbar(); renderSummary(); };
+  const markDirty = () => { state.dirty = true; renderTopbar(); };
   const bind = (key, input, transform = (v) => v) => {
     input.addEventListener('input', () => { draft[key] = transform(input.value); markDirty(); });
     return input;
   };
 
-  main.append(
-    overviewSection(app, builds),
-    identitySection(app, bind),
-    webviewSection(app, draft, bind, markDirty),
-    brandingSection(app),
-    studioSection(app, draft, markDirty),
-    featuresSection(app, draft, markDirty),
-    offlineSection(app, draft, markDirty),
-    signingSection(app),
-    buildSection(app),
-  );
-
-  function renderSummary() {
-    clear(summary).append(
-      el('h4', { text: 'Summary' }),
-      kv('Website', hostOf(draft.website_url)),
-      kv('Package', draft.android_package_id),
-      kv('Features', `${(draft.features || []).length} enabled`),
-      kv('Next build', `${draft.version_name} (${app.next_version_code})`),
-      kv('Signing', app.keystore_file && app.key_alias ? 'Upload key' : 'Debug key'),
-      el('button', {
-        class: 'btn primary', style: 'width:100%;justify-content:center;margin-top:14px',
-        text: state.dirty ? 'Save changes' : 'Saved', disabled: !state.dirty, onclick: save,
-      }),
-      el('button', {
-        class: 'btn', style: 'width:100%;justify-content:center;margin-top:8px',
-        text: 'Duplicate as new app', onclick: () => duplicateDialog(app),
-      }),
-      el('button', {
-        class: 'btn danger sm', style: 'width:100%;justify-content:center;margin-top:8px',
-        text: 'Delete app', onclick: () => deleteDialog(app),
-      }),
-    );
+  async function save() {
+    try {
+      const { app: saved } = await api('PUT', '/api/apps/' + app.id, draft);
+      state.app = saved;
+      state.draft = { ...saved };
+      state.dirty = false;
+      document.getElementById('crumb').textContent = `${saved.name} · ${label}`;
+      renderSidebar();
+      renderTopbar();
+      toast('Saved');
+      return true;
+    } catch (error) {
+      toast(error.message, true);
+      return false;
+    }
   }
 
   function renderTopbar() {
@@ -762,46 +726,59 @@ async function showApp(appId) {
     );
   }
 
-  async function save() {
-    try {
-      const { app: saved } = await api('PUT', '/api/apps/' + app.id, draft);
-      state.app = saved;
-      state.dirty = false;
-      document.getElementById('crumb').textContent = saved.name;
-      renderSidebar();
-      renderTopbar();
-      renderSummary();
-      toast('Saved');
-    } catch (error) { toast(error.message, true); }
-  }
+  const pages = {
+    overview: () => overviewPage(app, builds),
+    identity: () => identitySection(draft, bind),
+    webview: () => webviewSection(draft, bind, markDirty),
+    branding: () => brandingSection(app),
+    studio: () => studioPage(app, draft, markDirty),
+    features: () => featuresSection(draft, markDirty),
+    offline: () => offlineSection(draft, markDirty),
+    signing: () => signingSection(app),
+    build: () => buildSection(app),
+  };
 
+  clear(document.getElementById('content')).append(
+    el('div', { class: 'page' }, [
+      el('div', { class: 'page-head' }, [
+        el('h2', { class: 'sec', text: label }),
+        el('p', { class: 'sub', text: subtitle }),
+      ]),
+      pages[state.section](),
+      pager(app, state.section, save),
+    ]),
+  );
   renderTopbar();
-  renderSummary();
-
-  // A click from another page (a build, say) lands here with a section owed.
-  if (pendingSection) {
-    const target = document.getElementById('sec-' + pendingSection);
-    if (target) target.scrollIntoView({ block: 'start' });
-    markSection(pendingSection);
-    pendingSection = null;
-  }
-
-  // Keep the sidebar honest while scrolling: the topmost visible section is
-  // the highlighted one.
-  if (state.spy) state.spy.disconnect();
-  state.spy = new IntersectionObserver((entries) => {
-    const visible = entries
-      .filter((entry) => entry.isIntersecting)
-      .sort((a, b) => a.target.getBoundingClientRect().top
-        - b.target.getBoundingClientRect().top);
-    if (visible.length) markSection(visible[0].target.id.replace('sec-', ''));
-  }, { rootMargin: '-10% 0px -65% 0px' });
-  main.querySelectorAll('fieldset.group').forEach((group) => state.spy.observe(group));
 }
 
+/* Back and Next at the foot of every page, so finishing one step leads to the
+ * next without hunting the sidebar. Next saves first — moving on must never
+ * shed the edits, and a failed save keeps you here with the reason on screen. */
+function pager(app, section, save) {
+  const index = APP_PAGES.findIndex(([id]) => id === section);
+  const prev = APP_PAGES[index - 1];
+  const next = APP_PAGES[index + 1];
+  const goTo = async (id) => {
+    if (state.dirty && !(await save())) return;
+    go(`#/app/${app.id}/${id}`);
+  };
+  return el('div', { class: 'pager' }, [
+    prev
+      ? el('button', { class: 'btn', onclick: () => goTo(prev[0]) }, ['← ', prev[1]])
+      : el('span'),
+    next
+      ? el('button', { class: 'btn primary', onclick: () => goTo(next[0]) },
+          ['Next: ' + next[1] + ' →'])
+      : null,
+  ]);
+}
+
+/* One card per page. The page heading already names the section, so the card
+ * itself carries no legend — except when a page stacks more than one card and
+ * each needs its own title. */
 function fieldset(id, legend, children) {
-  return el('fieldset', { class: 'group', id: 'sec-' + id },
-    [el('legend', { text: legend }), ...children]);
+  return el('section', { class: 'group', id: 'sec-' + id },
+    [legend ? el('h3', { class: 'group-title', text: legend }) : null, ...children]);
 }
 
 function checkbox(label, checked, onchange, hint) {
@@ -818,6 +795,23 @@ function kv(key, value) {
 }
 
 /* ── sections ────────────────────────────────────────────────────────── */
+
+function overviewPage(app, builds) {
+  const btn = 'width:100%;justify-content:center;margin-top:8px';
+  const aside = el('aside', { class: 'summary' }, [
+    el('h4', { text: 'Summary' }),
+    kv('Website', hostOf(app.website_url)),
+    kv('Package', app.android_package_id),
+    kv('Features', `${(app.features || []).length} enabled`),
+    kv('Next build', `${app.version_name || '1.0.0'} (${app.next_version_code ?? app.version_code ?? 1})`),
+    kv('Signing', app.keystore_file && app.key_alias ? 'Upload key' : 'Debug key'),
+    el('button', { class: 'btn', style: btn + ';margin-top:14px',
+      text: 'Duplicate as new app', onclick: () => duplicateDialog(app) }),
+    el('button', { class: 'btn danger sm', style: btn,
+      text: 'Delete app', onclick: () => deleteDialog(app) }),
+  ]);
+  return el('div', { class: 'cols' }, [overviewSection(app, builds), aside]);
+}
 
 function overviewSection(app, builds) {
   const latest = builds.find((b) => b.status === 'succeeded');
@@ -876,11 +870,12 @@ function buildRow(app, build) {
   }, [
     el('td', {}, [
       el('span', { class: 'app-name mono', text: '#' + build.number }),
-      el('div', { class: 'app-url', text: `v${build.version_name} (${build.version_code})` }),
+      el('div', { class: 'app-url', text: `v${build.version_name || '1.0.0'} (${build.version_code ?? 1})` }),
     ]),
     el('td', {}, [
-      el('div', { text: shortDate(new Date(build.started_at * 1000).toISOString()) }),
-      el('div', { class: 'app-url', text: `${Math.round(build.duration)}s` }),
+      el('div', { text: build.started_at
+        ? shortDate(new Date(build.started_at * 1000).toISOString()) : '—' }),
+      el('div', { class: 'app-url', text: seconds(build.duration) }),
     ]),
     el('td', {}, [
       el('span', { class: 'pill ' + status[0] }, [el('i', { class: 'dot' }), status[1]]),
@@ -896,61 +891,61 @@ function buildRow(app, build) {
   ]);
 }
 
-function identitySection(app, bind) {
-  return fieldset('identity', 'Identity', [
-    field('Project name', bind('name', el('input', { class: 'input', value: app.name }))),
+function identitySection(draft, bind) {
+  return fieldset('identity', '', [
+    field('Project name', bind('name', el('input', { class: 'input', value: draft.name || '' }))),
     field('App name', bind('app_name',
-      el('input', { class: 'input', value: app.app_name || app.name })),
+      el('input', { class: 'input', value: draft.app_name || draft.name || '' })),
       'Shown under the icon on the phone.'),
     el('div', { class: 'row2' }, [
       field('Android package ID',
-        el('input', { class: 'input mono', value: app.android_package_id, disabled: true }),
+        el('input', { class: 'input mono', value: draft.android_package_id || '', disabled: true }),
         'Permanent — duplicate the app to change it.'),
       field('iOS bundle ID',
-        bind('ios_bundle_id', el('input', { class: 'input mono', value: app.ios_bundle_id }))),
+        bind('ios_bundle_id', el('input', { class: 'input mono', value: draft.ios_bundle_id || '' }))),
     ]),
   ]);
 }
 
-function webviewSection(app, draft, bind, markDirty) {
+function webviewSection(draft, bind, markDirty) {
   const external = el('select', { class: 'input' },
     [['browser', "Open in the phone's browser"],
      ['webview', 'Stay inside the app'],
      ['block', 'Block them']].map(([value, label]) =>
-      el('option', { value, text: label, selected: app.external_link_behavior === value })));
+      el('option', { value, text: label, selected: draft.external_link_behavior === value })));
   external.addEventListener('change', () => {
     draft.external_link_behavior = external.value;
     markDirty();
   });
 
-  return fieldset('webview', 'WebView', [
+  return fieldset('webview', '', [
     field('Website URL',
-      bind('website_url', el('input', { class: 'input mono', value: app.website_url })),
+      bind('website_url', el('input', { class: 'input mono', value: draft.website_url || '' })),
       'The page the app opens on launch.'),
     field('Allowed domains',
       bind('allowed_domains',
-        el('input', { class: 'input mono', value: (app.allowed_domains || []).join(', ') }),
+        el('input', { class: 'input mono', value: (draft.allowed_domains || []).join(', ') }),
         (v) => v.split(',').map((s) => s.trim()).filter(Boolean)),
       'Comma separated. Subdomains are included.'),
     field('Links outside those domains', external),
     field('Custom user agent',
       bind('custom_user_agent',
-        el('input', { class: 'input mono', value: app.custom_user_agent || '',
+        el('input', { class: 'input mono', value: draft.custom_user_agent || '',
           placeholder: 'Leave blank for the default' }),
         (v) => v.trim() || null)),
-    checkbox('Require HTTPS', app.require_https,
+    checkbox('Require HTTPS', draft.require_https,
       (on) => { draft.require_https = on; markDirty(); },
       'Blocks insecure page loads inside the app.'),
-    checkbox('Enable JavaScript', app.javascript_enabled,
+    checkbox('Enable JavaScript', draft.javascript_enabled,
       (on) => { draft.javascript_enabled = on; markDirty(); }),
-    checkbox('Enable local storage', app.dom_storage_enabled,
+    checkbox('Enable local storage', draft.dom_storage_enabled,
       (on) => { draft.dom_storage_enabled = on; markDirty(); },
       'Needed by most sites that keep you signed in.'),
   ]);
 }
 
 function brandingSection(app) {
-  return fieldset('branding', 'Branding', [
+  return fieldset('branding', '', [
     el('div', { class: 'row2' }, [
       uploadSlot(app, 'icon', 'App icon', 'PNG, ideally 1024×1024', '.png'),
       uploadSlot(app, 'splash', 'Splash image', 'Shown while the first page loads', '.png,.jpg,.jpeg'),
@@ -996,32 +991,107 @@ async function removeFile(appId, slot) {
   } catch (error) { toast(error.message, true); }
 }
 
-/* ── the studio: theme + navigation, with a live phone preview ───────── */
+/* ── the studio: modules, theme and navigation, with a live preview ──────
+ *
+ * Laid out like a studio rather than a form: the module library on the left,
+ * the phone in the middle, the knobs for what is selected on the right. The
+ * library writes the same draft.features the Features page reads, so the two
+ * can never disagree.
+ */
 
-function studioSection(app, draft, markDirty) {
+// Tiles that toggle a feature by name. Everything else on the library is
+// either always in the app or explicitly not built yet.
+const STUDIO_MODULES = [
+  ['bookmark', 'Saved items', 'Bookmarks and recents, kept on the device'],
+  ['download', 'Downloads', 'Save files to the phone and open them'],
+  ['settings', 'Settings screen', 'Clear cache, about, open the website'],
+  ['share', 'Native sharing', "The phone's share sheet on every page"],
+  ['refresh', 'Pull to refresh', 'Swipe down to reload'],
+  ['upload_file', 'File upload', 'Lets the site open the file picker'],
+  ['photo_camera', 'Camera', 'Adds a permission prompt'],
+  ['location_on', 'Location', 'Adds a permission prompt'],
+  ['link', 'Deep links', 'Links to your domain open the app'],
+];
+
+const STUDIO_SOON = [
+  ['notifications', 'Push notifications'],
+  ['qr_code_scanner', 'QR scanner'],
+  ['fingerprint', 'Biometric lock'],
+  ['contact_page', 'Contact sheet'],
+];
+
+function studioPage(app, draft, markDirty) {
   // The tabs get edited in place, so they must not share objects with the
   // saved app — a discarded draft would otherwise still have changed it.
   draft.nav_tabs = (draft.nav_tabs || []).map((tab) => ({ ...tab }));
   draft.nav_style = draft.nav_style || 'none';
+  draft.features = [...(draft.features || [])];
 
-  const preview = el('div', { class: 'phone-mock' });
+  const library = el('div', { class: 'modlib' });
+  const preview = el('div', { class: 'phone-mock lg' });
   const tabsBox = el('div');
   const tabsField = el('div', { class: 'field' });
 
   const accent = () => (
     /^#[0-9a-f]{6}$/i.test(draft.theme_color || '') ? draft.theme_color : '#607d8b');
   const tint = () => accent() + '26';
+  const has = (name) => draft.features.includes(name);
+
+  const setFeature = (name, on) => {
+    const current = new Set(draft.features);
+    if (on) current.add(name); else current.delete(name);
+    draft.features = [...current];
+    markDirty(); renderLibrary(); renderPreview();
+  };
 
   const ensureFeatureFor = (target) => {
     const need = (NAV_NATIVE_TARGETS[target] || [])[1];
-    if (need && !(draft.features || []).includes(need)) {
-      draft.features = [...(draft.features || []), need];
-      // The features section renders from the same draft; tick its box too.
-      const box = document.querySelector(`input[data-feature="${need}"]`);
-      if (box) box.checked = true;
+    if (need && !has(need)) {
+      draft.features = [...draft.features, need];
+      renderLibrary();
       toast(`Enabled the ${need} module for that tab`);
     }
   };
+
+  /* the library */
+
+  function modTile(glyph, name, blurb, on, toggle, extra = '') {
+    return el('button', {
+      class: 'modtile' + (on ? ' on' : '') + extra,
+      onclick: toggle,
+      type: 'button',
+    }, [
+      el('span', { class: 'material-symbols-outlined', text: glyph }),
+      el('span', { class: 'modtxt' }, [
+        el('b', { text: name }),
+        blurb ? el('span', { class: 'hint', text: blurb }) : null,
+      ]),
+    ]);
+  }
+
+  function renderLibrary() {
+    clear(library).append(
+      el('div', { class: 'modgroup', text: 'In every app' }),
+      modTile('language', 'Website', 'Your site, full screen', true, null, ' locked'),
+      modTile('wallpaper', 'Splash screen', 'Set it under Branding', true, null, ' locked'),
+      modTile('palette', 'Theme colour', 'Set on the right', true, null, ' locked'),
+
+      el('div', { class: 'modgroup', text: 'Modules' }),
+      modTile('menu', 'Bottom navigation', 'Native tabs along the bottom',
+        draft.nav_style === 'bottom', () => setNav(draft.nav_style !== 'bottom')),
+      modTile('cloud_off', 'Offline screens', 'Branded screens when the connection fails',
+        Boolean(draft.offline_fallback_enabled), () => {
+          draft.offline_fallback_enabled = !draft.offline_fallback_enabled;
+          markDirty(); renderLibrary();
+        }),
+      ...STUDIO_MODULES.map(([glyph, name, blurb]) =>
+        modTile(glyph, name, blurb, has(name), () => setFeature(name, !has(name)))),
+
+      el('div', { class: 'modgroup', text: 'Coming soon' }),
+      ...STUDIO_SOON.map(([glyph, name]) =>
+        modTile(glyph, name, null, false, null, ' soon')),
+    );
+  }
 
   /* theme colour */
   const color = el('input', { type: 'color', class: 'colorwell', value: accent() });
@@ -1040,24 +1110,28 @@ function studioSection(app, draft, markDirty) {
     markDirty(); renderPreview();
   });
 
-  /* navigation style */
+  /* navigation style — settable from the select and from the library tile */
   const styleSel = el('select', { class: 'input' }, [
     el('option', { value: 'none', text: 'No navigation — just the website',
       selected: draft.nav_style !== 'bottom' }),
     el('option', { value: 'bottom', text: 'Bottom navigation bar',
       selected: draft.nav_style === 'bottom' }),
   ]);
-  styleSel.addEventListener('change', () => {
-    draft.nav_style = styleSel.value;
-    if (draft.nav_style === 'bottom' && !draft.nav_tabs.length) {
+
+  function setNav(on) {
+    draft.nav_style = on ? 'bottom' : 'none';
+    styleSel.value = draft.nav_style;
+    if (on && !draft.nav_tabs.length) {
       draft.nav_tabs = [
         { label: 'Home', icon: 'home', target: '/' },
         { label: 'Settings', icon: 'settings', target: 'native:settings' },
       ];
       ensureFeatureFor('native:settings');
     }
-    markDirty(); renderTabs(); renderPreview();
-  });
+    markDirty(); renderLibrary(); renderTabs(); renderPreview();
+  }
+
+  styleSel.addEventListener('change', () => setNav(styleSel.value === 'bottom'));
 
   function tabRow(tab, index) {
     const label = el('input', { class: 'input', value: tab.label || '', placeholder: 'Home' });
@@ -1131,19 +1205,41 @@ function studioSection(app, draft, markDirty) {
 
   function renderPreview() {
     const tabs = draft.nav_style === 'bottom' ? draft.nav_tabs : [];
+    const hasNav = tabs.length > 0;
+    const actions = [];
+    if (hasNav && has('Saved items')) actions.push('bookmark_add');
+    if (hasNav && has('Native sharing')) actions.push('share');
+
     clear(preview).append(
       el('div', { class: 'pm-status' }, [
         el('span', { text: '9:41' }),
-        el('span', { class: 'material-symbols-outlined', text: 'wifi' }),
+        el('span', { class: 'pm-sicons' }, ['signal_cellular_alt', 'wifi', 'battery_full']
+          .map((glyph) => el('span', { class: 'material-symbols-outlined', text: glyph }))),
       ]),
-      el('div', { class: 'pm-appbar', text: draft.app_name || draft.name || 'App' }),
+      el('div', { class: 'pm-appbar' }, [
+        el('span', { class: 'pm-title', text: draft.app_name || draft.name || 'App' }),
+        actions.length ? el('span', { class: 'pm-abx' }, actions.map((glyph) =>
+          el('span', { class: 'material-symbols-outlined', text: glyph }))) : null,
+      ]),
       el('div', { class: 'pm-body' }, [
-        el('div', { class: 'pm-hero', style: `background:${tint()}` }),
+        el('div', { class: 'pm-hero', style: `background:${tint()}` }, [
+          el('span', { class: 'pm-hero-dot', style: `background:${accent()}` }),
+        ]),
         el('div', { class: 'pm-line' }),
         el('div', { class: 'pm-line short' }),
+        el('div', { class: 'pm-cards' }, [
+          el('div', { class: 'pm-card' }, [
+            el('div', { class: 'pm-line', style: 'width:70%' }),
+            el('div', { class: 'pm-line short' }),
+          ]),
+          el('div', { class: 'pm-card' }, [
+            el('div', { class: 'pm-line', style: 'width:60%' }),
+            el('div', { class: 'pm-line short' }),
+          ]),
+        ]),
         el('div', { class: 'pm-chip', style: `background:${accent()}` }),
       ]),
-      tabs.length ? el('div', { class: 'pm-nav' }, tabs.map((tab, i) =>
+      hasNav ? el('div', { class: 'pm-nav' }, tabs.map((tab, i) =>
         el('span', { class: 'pm-item' + (i === 0 ? ' on' : '') }, [
           el('span', {
             class: 'material-symbols-outlined', text: tab.icon || 'public',
@@ -1154,33 +1250,37 @@ function studioSection(app, draft, markDirty) {
     );
   }
 
+  renderLibrary();
   renderTabs();
   renderPreview();
 
-  return fieldset('studio', 'App studio', [
-    el('div', { class: 'studio' }, [
-      el('div', {}, [
-        field('Theme colour',
-          el('div', { class: 'colorrow' }, [color, hex]),
-          "The app's accent — buttons, highlights, the active tab. Use the website's brand colour."),
-        field('Navigation', styleSel,
-          'A bottom bar with a native top app bar. Needed for the Saved, Downloads and Settings screens.'),
-        tabsField,
-      ]),
-      el('div', { class: 'studio-side' }, [
-        preview,
-        el('p', { class: 'hint', style: 'text-align:center',
-          text: 'Rough preview — the built app uses real Material screens.' }),
-      ]),
+  return el('div', { class: 'studio-full' }, [
+    el('section', { class: 'group modlib-card' }, [
+      el('h3', { class: 'group-title', text: 'Modules' }),
+      library,
+    ]),
+    el('div', { class: 'studio-stage' }, [
+      preview,
+      el('p', { class: 'hint', style: 'text-align:center',
+        text: 'Live preview — the built app uses real Material screens in this colour.' }),
+    ]),
+    el('section', { class: 'group' }, [
+      el('h3', { class: 'group-title', text: 'Appearance' }),
+      field('Theme colour',
+        el('div', { class: 'colorrow' }, [color, hex]),
+        "The app's accent — buttons, highlights, the active tab. Use the website's brand colour."),
+      field('Navigation', styleSel,
+        'A bottom bar with a native top app bar. Needed for the Saved, Downloads and Settings screens.'),
+      tabsField,
     ]),
   ]);
 }
 
-function featuresSection(app, draft, markDirty) {
+function featuresSection(draft, markDirty) {
   // Reads and writes draft.features rather than keeping its own copy, because
   // the studio can also enable a module (adding a native tab switches it on)
   // and the two must not overwrite each other.
-  return fieldset('features', 'Features', [
+  return fieldset('features', '', [
     el('div', { class: 'checks' }, FEATURES.map(([name, hint]) =>
       el('label', { class: 'check' }, [
         el('input', {
@@ -1200,12 +1300,12 @@ function featuresSection(app, draft, markDirty) {
   ]);
 }
 
-function offlineSection(app, draft, markDirty) {
-  return fieldset('offline', 'Offline', [
-    checkbox('Cache pages for faster loading', app.cache_enabled,
+function offlineSection(draft, markDirty) {
+  return fieldset('offline', '', [
+    checkbox('Cache pages for faster loading', draft.cache_enabled,
       (on) => { draft.cache_enabled = on; markDirty(); }),
     checkbox('Show a branded screen when a page fails to load',
-      app.offline_fallback_enabled,
+      draft.offline_fallback_enabled,
       (on) => { draft.offline_fallback_enabled = on; markDirty(); },
       'Replaces the browser error page with one that offers Try again and Go home.'),
   ]);
@@ -1248,11 +1348,11 @@ function signingSection(app) {
   children.push(el('p', { class: 'hint', style: 'margin-bottom:14px',
     text: 'Passwords are never stored — you enter them each time you build. A leaked upload key cannot be revoked, so keep a backup somewhere safe.' }));
 
-  return fieldset('signing', 'Signing', children);
+  return fieldset('signing', '', children);
 }
 
 function buildSection(app) {
-  return fieldset('build', 'Build', [
+  return fieldset('build', '', [
     el('p', { class: 'sub',
       text: 'Runs on this server. One build at a time, typically 3–5 minutes.' }),
     el('button', { class: 'btn primary', text: 'Build now', onclick: () => buildDialog(app) }),
@@ -1286,7 +1386,7 @@ function buildDialog(app) {
   const body = [
     field('Output', output),
     el('div', { class: 'banner info' }, [
-      el('b', { text: `Will build version ${app.version_name} (${app.next_version_code})` }),
+      el('b', { text: `Will build version ${app.version_name || '1.0.0'} (${app.next_version_code ?? app.version_code ?? 1})` }),
       app.next_version_code === app.version_code
         ? 'This app has not been built at this version code yet, so it is used as it stands.'
         : 'The version code moves up because this app has already built at the current one, and Play rejects an upload that reuses a code.',
@@ -1336,6 +1436,7 @@ async function showBuild(appId, number) {
   ]);
 
   state.app = app;
+  state.section = null;
   state.dirty = false;
   renderSidebar();
   document.getElementById('crumb').textContent = `${app.name} — build #${build.number}`;
@@ -1440,8 +1541,8 @@ function finishBuild(app, finished, status, result) {
   status.className = 'pill ' + (finished.status === 'succeeded' ? 'ok' : 'err');
   clear(status).append(el('i', { class: 'dot' }),
     finished.status === 'succeeded'
-      ? `Built in ${Math.round(finished.duration)}s`
-      : `Failed after ${Math.round(finished.duration)}s`);
+      ? `Built in ${seconds(finished.duration)}`
+      : `Failed after ${seconds(finished.duration)}`);
 
   clear(result);
   if (finished.status === 'succeeded') {
@@ -1494,7 +1595,7 @@ function describe(kind, name = '') {
     if (name.includes('x86_64')) return 'emulators';
     return 'sideload & testing';
   }
-  return { aab: 'for Google Play', zip: 'full Flutter project' }[kind] || kind;
+  return { aab: 'for Google Play', zip: 'full Flutter project' }[kind] || kind || 'file';
 }
 
 /* ── destructive dialogs ─────────────────────────────────────────────── */
@@ -1528,6 +1629,8 @@ function deleteDialog(app) {
     try {
       await api('DELETE', '/api/apps/' + app.id);
       close();
+      state.draft = null;
+      state.dirty = false;
       go('#/');
       toast(`Deleted ${app.name}`);
     } catch (error) { toast(error.message, true); }
@@ -1616,7 +1719,7 @@ async function showBilling() {
 
 function subscriptionCard(user) {
   if (!user) return el('div', {});
-  const left = `${user.builds_left} of ${user.builds_limit} builds left`;
+  const left = `${user.builds_left ?? 0} of ${user.builds_limit ?? 0} builds left`;
   if (user.plan === 'trial') {
     return el('div', { class: 'banner info' }, [
       el('b', { text: 'Free trial' }),
@@ -1719,11 +1822,11 @@ async function showPayment(reference) {
           el('div', { class: 'paycard' }, [
             el('h3', { class: 'paycard-h', text: 'Details' }),
             kv('Status', payment.status),
-            kv('Checks made', String(payment.checks)),
+            kv('Checks made', String(payment.checks ?? 0)),
             kv('Gateway id', payment.transaction_id || '—'),
             kv('Mode', payment.mode),
-            payment.status === 'pending'
-              ? kv('Gives up in', payment.expires_in + 's')
+            payment.status === 'pending' && Number.isFinite(payment.expires_in)
+              ? kv('Gives up in', Math.max(0, payment.expires_in) + 's')
               : null,
           ].filter(Boolean)),
           el('button', {
@@ -1777,7 +1880,7 @@ function statusBanner(payment) {
   }
   return el('div', { class: 'banner info' }, [
     el('b', { text: 'Check your phone' }),
-    `A prompt was sent to ${payment.phone}. Enter your PIN there to approve ` +
+    `A prompt was sent to ${payment.phone || 'your phone'}. Enter your PIN there to approve ` +
     `${money(payment.amount)}. Safe to close this page — the server keeps checking.`,
   ]);
 }
@@ -1802,7 +1905,7 @@ function handsetPanel(prompt, payment) {
       el('div', { class: 'hint mono', text: payment.reference }),
     ]),
     done
-      ? el('p', { class: 'hint', text: 'Answered: ' + prompt.status })
+      ? el('p', { class: 'hint', text: 'Answered: ' + (prompt.status || 'done') })
       : el('div', { class: 'handset-actions' }, [
           el('button', { class: 'btn primary sm', text: 'Enter PIN', onclick: () => act('approve') }),
           el('button', { class: 'btn danger sm', text: 'Decline', onclick: () => act('decline') }),
@@ -1851,15 +1954,15 @@ async function showAdmin() {
     el('tbody', {}, data.users.map((user) => el('tr', {}, [
       el('td', {}, [
         el('div', { class: 'app-name', text: user.name }),
-        el('div', { class: 'app-url mono', text: user.phone
-          + (user.apps.length ? ' · ' + user.apps.join(', ') : ' · no apps') }),
+        el('div', { class: 'app-url mono', text: (user.phone || '—')
+          + (user.apps && user.apps.length ? ' · ' + user.apps.join(', ') : ' · no apps') }),
       ]),
       el('td', {}, [user.is_admin
         ? el('span', { class: 'pill ok' }, [el('i', { class: 'dot' }), 'Admin'])
         : el('span', { class: 'pill ' + (user.plan === 'trial' ? 'warn' : 'ok') },
             [el('i', { class: 'dot' }), user.plan === 'trial' ? 'Trial' : user.plan])]),
-      el('td', { text: `${user.builds_used} / ${user.builds_limit}` }),
-      el('td', { text: megabytes(user.disk) }),
+      el('td', { text: `${user.builds_used ?? 0} / ${user.builds_limit ?? 0}` }),
+      el('td', { text: megabytes(user.disk || 0) }),
       el('td', { style: 'text-align:right' }, [
         el('button', {
           class: 'btn sm', text: '+5 builds',
@@ -1927,8 +2030,8 @@ async function route() {
       await showBuild(decodeURIComponent(build[1]), build[2]);
       return;
     }
-    const app = hash.match(/^#\/app\/([^/]+)$/);
-    if (app) await showApp(decodeURIComponent(app[1]));
+    const app = hash.match(/^#\/app\/([^/]+)(?:\/([a-z]+))?\/?$/);
+    if (app) await showAppPage(decodeURIComponent(app[1]), app[2] || 'overview');
     else await showList();
   } catch (error) {
     document.getElementById('crumb').textContent = 'Problem';
@@ -1948,6 +2051,10 @@ function hostOf(url) {
 function shortDate(value) {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString();
+}
+
+function seconds(value) {
+  return Number.isFinite(value) ? `${Math.round(value)}s` : '—';
 }
 
 function megabytes(bytes) {
