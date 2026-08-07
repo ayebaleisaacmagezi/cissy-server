@@ -20,8 +20,9 @@ from .errors import ValidationError
 
 SCHEMA_VERSION = 1
 
-# Kept identical to the desktop builder's feature names so a manifest copied
-# between the two products keeps its meaning.
+# The first seven are kept identical to the desktop builder's feature names so
+# a manifest copied between the two products keeps its meaning. The rest are
+# native modules this server grew later; the desktop builder ignores them.
 FEATURES = (
     "File upload",
     "Downloads",
@@ -30,9 +31,40 @@ FEATURES = (
     "Camera",
     "Location",
     "Deep links",
+    "Saved items",
+    "Settings screen",
 )
 
 EXTERNAL_LINK_BEHAVIOURS = ("browser", "webview", "block")
+
+NAV_STYLES = ("none", "bottom")
+
+# What a navigation tab may open besides a page of the website. Each native
+# target only exists when its module is enabled, which validate() enforces.
+NAV_NATIVE_TARGETS = {
+    "native:saved": "Saved items",
+    "native:downloads": "Downloads",
+    "native:settings": "Settings screen",
+}
+
+# The Material icon names a tab may use. A fixed set because the generated
+# Dart maps each name to an IconData at compile time.
+NAV_ICONS = (
+    "home",
+    "storefront",
+    "menu_book",
+    "article",
+    "shopping_bag",
+    "event",
+    "call",
+    "person",
+    "bookmark",
+    "download",
+    "settings",
+    "info",
+)
+
+_HEX_COLOR_RE = re.compile(r"^#[0-9a-f]{6}$")
 
 # Written into Info.plist. Vague reasons are a common App Store rejection, so
 # these name the app and say what the permission is actually for.
@@ -77,6 +109,12 @@ class AppConfig:
     dom_storage_enabled: bool = True
     cache_enabled: bool = True
     offline_fallback_enabled: bool = True
+    # The client's brand colour, seeded into the generated app's whole theme.
+    # Empty means the neutral grey default — never this product's own blue.
+    theme_color: str = ""
+    nav_style: str = "none"
+    # Each tab: {"label": ..., "icon": <NAV_ICONS>, "target": url | /path | native:*}
+    nav_tabs: tuple[dict[str, str], ...] = ()
     custom_user_agent: str | None = None
     version_name: str = "1.0.0"
     version_code: int = 1
@@ -152,6 +190,9 @@ class AppConfig:
             "dom_storage_enabled": self.dom_storage_enabled,
             "cache_enabled": self.cache_enabled,
             "offline_fallback_enabled": self.offline_fallback_enabled,
+            "theme_color": self.theme_color,
+            "nav_style": self.nav_style,
+            "nav_tabs": [dict(tab) for tab in self.nav_tabs],
             "custom_user_agent": self.custom_user_agent,
             "version_name": self.version_name,
             "version_code": self.version_code,
@@ -188,6 +229,9 @@ class AppConfig:
             dom_storage_enabled=_flag(data, "dom_storage_enabled", True),
             cache_enabled=_flag(data, "cache_enabled", True),
             offline_fallback_enabled=_flag(data, "offline_fallback_enabled", True),
+            theme_color=_text(data, "theme_color"),
+            nav_style=_text(data, "nav_style") or "none",
+            nav_tabs=_tab_list(data, "nav_tabs"),
             custom_user_agent=_optional_text(data, "custom_user_agent"),
             version_name=_text(data, "version_name") or "1.0.0",
             version_code=_positive_int(data, "version_code", 1),
@@ -223,6 +267,18 @@ def normalise(config: AppConfig) -> AppConfig:
 
     agent = (config.custom_user_agent or "").strip()
 
+    style = config.nav_style.strip().lower() or "none"
+    tabs = []
+    if style != "none":
+        for tab in config.nav_tabs:
+            cleaned = {
+                "label": str(tab.get("label", "")).strip(),
+                "icon": str(tab.get("icon", "")).strip().lower(),
+                "target": str(tab.get("target", "")).strip(),
+            }
+            if cleaned["label"] or cleaned["target"]:
+                tabs.append(cleaned)
+
     return replace(
         config,
         name=config.name.strip(),
@@ -232,6 +288,9 @@ def normalise(config: AppConfig) -> AppConfig:
         ios_bundle_id=config.ios_bundle_id.strip(),
         allowed_domains=tuple(domains),
         features=tuple(features),
+        theme_color=config.theme_color.strip().lower(),
+        nav_style=style,
+        nav_tabs=tuple(tabs),
         custom_user_agent=agent or None,
         key_alias=(config.key_alias or "").strip() or None,
     )
@@ -254,14 +313,14 @@ def validate(config: AppConfig) -> None:
     if not _PACKAGE_RE.match(config.android_package_id):
         raise ValidationError(
             "The Android package ID must be lower-case, dot-separated and have "
-            "at least two parts — for example com.cissytech.portal.",
+            "at least two parts — for example com.example.app.",
             detail=config.android_package_id,
         )
 
     if not _PACKAGE_RE.match(config.ios_bundle_id.lower()):
         raise ValidationError(
             "The iOS bundle ID must be dot-separated with at least two parts — "
-            "for example com.cissytech.portal.",
+            "for example com.example.app.",
             detail=config.ios_bundle_id,
         )
 
@@ -275,6 +334,20 @@ def validate(config: AppConfig) -> None:
     if unknown:
         raise ValidationError(f"Unknown feature: {', '.join(unknown)}.")
 
+    if config.theme_color and not _HEX_COLOR_RE.match(config.theme_color):
+        raise ValidationError(
+            "The theme colour must be a six-digit hex value like #b3561d.",
+            detail=config.theme_color,
+        )
+
+    if config.nav_style not in NAV_STYLES:
+        raise ValidationError(
+            "Navigation must be set to none or bottom.", detail=config.nav_style
+        )
+
+    if config.nav_style != "none":
+        _validate_nav_tabs(config)
+
     if not _VERSION_NAME_RE.match(config.version_name):
         raise ValidationError(
             "The version name should look like 1.4.0.",
@@ -283,6 +356,51 @@ def validate(config: AppConfig) -> None:
 
     if config.version_code < 1:
         raise ValidationError("The version code must be 1 or higher.")
+
+
+def _validate_nav_tabs(config: AppConfig) -> None:
+    if not 2 <= len(config.nav_tabs) <= 5:
+        raise ValidationError("Bottom navigation needs between 2 and 5 tabs.")
+
+    features = set(config.features)
+    web_tabs = 0
+    for tab in config.nav_tabs:
+        label = tab.get("label", "")
+        target = tab.get("target", "")
+        icon = tab.get("icon", "")
+        if not label:
+            raise ValidationError("Every navigation tab needs a label.")
+        if len(label) > 14:
+            raise ValidationError(
+                "Tab labels must be 14 characters or fewer so they fit "
+                "under the icon.",
+                detail=label,
+            )
+        if icon and icon not in NAV_ICONS:
+            raise ValidationError(f'Unknown tab icon "{icon}".')
+        if target in NAV_NATIVE_TARGETS:
+            needed = NAV_NATIVE_TARGETS[target]
+            if needed not in features:
+                raise ValidationError(
+                    f'The "{label}" tab opens the {needed} screen, but that '
+                    f"module is switched off. Enable it or remove the tab."
+                )
+        elif target.startswith("/"):
+            web_tabs += 1
+        elif target.startswith(("http://", "https://")):
+            _validate_url(target, config.require_https)
+            web_tabs += 1
+        else:
+            raise ValidationError(
+                f'The "{label}" tab must open a full URL, a path starting '
+                f"with /, or a native screen.",
+                detail=target,
+            )
+    if web_tabs == 0:
+        raise ValidationError(
+            "At least one navigation tab must open the website — otherwise "
+            "the app has no web content at all."
+        )
 
 
 def _validate_url(value: str, require_https: bool) -> None:
@@ -350,3 +468,20 @@ def _str_list(data: dict[str, Any], key: str) -> list[str]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, str) and item.strip()]
+
+
+def _tab_list(data: dict[str, Any], key: str) -> tuple[dict[str, str], ...]:
+    value = data.get(key)
+    if not isinstance(value, list):
+        return ()
+    tabs = []
+    for item in value:
+        if isinstance(item, dict):
+            tabs.append(
+                {
+                    "label": str(item.get("label", "")),
+                    "icon": str(item.get("icon", "")),
+                    "target": str(item.get("target", "")),
+                }
+            )
+    return tuple(tabs)

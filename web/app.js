@@ -18,7 +18,20 @@ const FEATURES = [
   ['Camera', 'Adds a permission prompt'],
   ['Location', 'Adds a permission prompt'],
   ['Deep links', 'Open the app from links to your domain'],
+  ['Saved items', 'Bookmarks and recently viewed, stored on the device'],
+  ['Settings screen', 'Native settings: clear cache, browsing data, about'],
 ];
+
+// Mirrors NAV_ICONS in cissy/config.py — the set the generated app can render.
+const NAV_ICONS = ['home', 'storefront', 'menu_book', 'article', 'shopping_bag',
+  'event', 'call', 'person', 'bookmark', 'download', 'settings', 'info'];
+
+// target value → [label, which feature it needs]
+const NAV_NATIVE_TARGETS = {
+  'native:saved': ['Saved items screen', 'Saved items'],
+  'native:downloads': ['Downloads screen', 'Downloads'],
+  'native:settings': ['Settings screen', 'Settings screen'],
+};
 
 const state = {
   apps: [],
@@ -589,18 +602,37 @@ function signingPill(app) {
     : el('span', { class: 'pill warn' }, [el('i', { class: 'dot' }), 'Debug key']);
 }
 
+// The client's own reversed domain (portal.example.com → com.example.portal),
+// so apps are published under the client's identity, not ours. Falls back to
+// the app name when no usable URL has been typed yet.
+function suggestPackageId(nameValue, urlValue) {
+  const raw = urlValue.trim();
+  let host = '';
+  try {
+    host = new URL(raw.includes('://') ? raw : 'https://' + raw).hostname;
+  } catch { /* not a URL yet */ }
+  const parts = host.toLowerCase().split('.')
+    .filter((p) => p && p !== 'www')
+    .map((p) => p.replace(/[^a-z0-9_]/g, '').replace(/^[0-9_]+/, ''))
+    .filter(Boolean);
+  if (parts.length >= 2) return parts.reverse().join('.');
+  const slug = nameValue.trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
+  return slug ? `com.${slug}.app` : '';
+}
+
 function newAppDialog() {
-  const name = el('input', { class: 'input', placeholder: 'Cissytech Portal' });
-  const url = el('input', { class: 'input mono', placeholder: 'https://portal.cissytech.com' });
-  const pkg = el('input', { class: 'input mono', placeholder: 'com.cissytech.portal' });
+  const name = el('input', { class: 'input', placeholder: 'My Business' });
+  const url = el('input', { class: 'input mono', placeholder: 'https://www.example.com' });
+  const pkg = el('input', { class: 'input mono', placeholder: 'com.example.app' });
 
   // Suggested rather than generated silently: the package id is permanent once
   // the app is on Play.
-  name.addEventListener('input', () => {
+  const suggest = () => {
     if (pkg.dataset.touched) return;
-    const slug = name.value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
-    pkg.value = slug ? `com.cissytech.${slug}` : '';
-  });
+    pkg.value = suggestPackageId(name.value, url.value);
+  };
+  name.addEventListener('input', suggest);
+  url.addEventListener('input', suggest);
   pkg.addEventListener('input', () => { pkg.dataset.touched = '1'; });
 
   const create = async () => {
@@ -667,6 +699,7 @@ async function showApp(appId) {
     identitySection(app, bind),
     webviewSection(app, draft, bind, markDirty),
     brandingSection(app),
+    studioSection(app, draft, markDirty),
     featuresSection(app, draft, markDirty),
     offlineSection(app, draft, markDirty),
     signingSection(app),
@@ -919,16 +952,200 @@ async function removeFile(appId, slot) {
   } catch (error) { toast(error.message, true); }
 }
 
+/* ── the studio: theme + navigation, with a live phone preview ───────── */
+
+function studioSection(app, draft, markDirty) {
+  // The tabs get edited in place, so they must not share objects with the
+  // saved app — a discarded draft would otherwise still have changed it.
+  draft.nav_tabs = (draft.nav_tabs || []).map((tab) => ({ ...tab }));
+  draft.nav_style = draft.nav_style || 'none';
+
+  const preview = el('div', { class: 'phone-mock' });
+  const tabsBox = el('div');
+  const tabsField = el('div', { class: 'field' });
+
+  const accent = () => (
+    /^#[0-9a-f]{6}$/i.test(draft.theme_color || '') ? draft.theme_color : '#607d8b');
+  const tint = () => accent() + '26';
+
+  const ensureFeatureFor = (target) => {
+    const need = (NAV_NATIVE_TARGETS[target] || [])[1];
+    if (need && !(draft.features || []).includes(need)) {
+      draft.features = [...(draft.features || []), need];
+      // The features section renders from the same draft; tick its box too.
+      const box = document.querySelector(`input[data-feature="${need}"]`);
+      if (box) box.checked = true;
+      toast(`Enabled the ${need} module for that tab`);
+    }
+  };
+
+  /* theme colour */
+  const color = el('input', { type: 'color', class: 'colorwell', value: accent() });
+  const hex = el('input', {
+    class: 'input mono', style: 'max-width:130px',
+    value: draft.theme_color || '', placeholder: '#01a6ff',
+  });
+  color.addEventListener('input', () => {
+    hex.value = color.value;
+    draft.theme_color = color.value;
+    markDirty(); renderPreview();
+  });
+  hex.addEventListener('input', () => {
+    draft.theme_color = hex.value.trim().toLowerCase();
+    if (/^#[0-9a-f]{6}$/.test(draft.theme_color)) color.value = draft.theme_color;
+    markDirty(); renderPreview();
+  });
+
+  /* navigation style */
+  const styleSel = el('select', { class: 'input' }, [
+    el('option', { value: 'none', text: 'No navigation — just the website',
+      selected: draft.nav_style !== 'bottom' }),
+    el('option', { value: 'bottom', text: 'Bottom navigation bar',
+      selected: draft.nav_style === 'bottom' }),
+  ]);
+  styleSel.addEventListener('change', () => {
+    draft.nav_style = styleSel.value;
+    if (draft.nav_style === 'bottom' && !draft.nav_tabs.length) {
+      draft.nav_tabs = [
+        { label: 'Home', icon: 'home', target: '/' },
+        { label: 'Settings', icon: 'settings', target: 'native:settings' },
+      ];
+      ensureFeatureFor('native:settings');
+    }
+    markDirty(); renderTabs(); renderPreview();
+  });
+
+  function tabRow(tab, index) {
+    const label = el('input', { class: 'input', value: tab.label || '', placeholder: 'Home' });
+    label.addEventListener('input', () => {
+      tab.label = label.value; markDirty(); renderPreview();
+    });
+
+    const icon = el('select', { class: 'input' }, NAV_ICONS.map((name) =>
+      el('option', { value: name, text: name.replace(/_/g, ' '),
+        selected: (tab.icon || 'home') === name })));
+    icon.addEventListener('change', () => {
+      tab.icon = icon.value; markDirty(); renderPreview();
+    });
+
+    const isNative = tab.target in NAV_NATIVE_TARGETS;
+    const isCustom = !isNative && tab.target !== '/';
+    const kind = el('select', { class: 'input' }, [
+      el('option', { value: '/', text: 'Website home', selected: tab.target === '/' }),
+      el('option', { value: 'custom', text: 'Website page…', selected: isCustom }),
+      ...Object.entries(NAV_NATIVE_TARGETS).map(([value, [text]]) =>
+        el('option', { value, text, selected: tab.target === value })),
+    ]);
+    const custom = el('input', {
+      class: 'input mono', value: isCustom ? tab.target || '' : '',
+      placeholder: '/shop or https://…',
+      style: isCustom ? '' : 'display:none',
+    });
+    kind.addEventListener('change', () => {
+      if (kind.value === 'custom') {
+        custom.style.display = '';
+        tab.target = custom.value;
+      } else {
+        custom.style.display = 'none';
+        tab.target = kind.value;
+        ensureFeatureFor(kind.value);
+      }
+      markDirty(); renderPreview();
+    });
+    custom.addEventListener('input', () => {
+      tab.target = custom.value; markDirty();
+    });
+
+    const remove = el('button', {
+      class: 'btn sm ghost', text: 'Remove', title: 'Remove this tab',
+      onclick: () => {
+        draft.nav_tabs.splice(index, 1);
+        markDirty(); renderTabs(); renderPreview();
+      },
+    });
+    return el('div', { class: 'tabedit' }, [label, icon, kind, custom, remove]);
+  }
+
+  function renderTabs() {
+    clear(tabsField);
+    if (draft.nav_style !== 'bottom') return;
+    clear(tabsBox).append(...draft.nav_tabs.map(tabRow));
+    tabsField.append(
+      el('label', { text: 'Tabs (2–5)' }),
+      tabsBox,
+      draft.nav_tabs.length < 5 ? el('button', {
+        class: 'btn sm', text: '+ Add tab',
+        onclick: () => {
+          draft.nav_tabs.push({ label: '', icon: 'article', target: '/' });
+          markDirty(); renderTabs(); renderPreview();
+        },
+      }) : null,
+      el('p', { class: 'hint',
+        text: 'Tabs can open a page of the website or a native screen. Native screens switch their module on automatically.' }),
+    );
+  }
+
+  function renderPreview() {
+    const tabs = draft.nav_style === 'bottom' ? draft.nav_tabs : [];
+    clear(preview).append(
+      el('div', { class: 'pm-status' }, [
+        el('span', { text: '9:41' }),
+        el('span', { class: 'material-symbols-outlined', text: 'wifi' }),
+      ]),
+      el('div', { class: 'pm-appbar', text: draft.app_name || draft.name || 'App' }),
+      el('div', { class: 'pm-body' }, [
+        el('div', { class: 'pm-hero', style: `background:${tint()}` }),
+        el('div', { class: 'pm-line' }),
+        el('div', { class: 'pm-line short' }),
+        el('div', { class: 'pm-chip', style: `background:${accent()}` }),
+      ]),
+      tabs.length ? el('div', { class: 'pm-nav' }, tabs.map((tab, i) =>
+        el('span', { class: 'pm-item' + (i === 0 ? ' on' : '') }, [
+          el('span', {
+            class: 'material-symbols-outlined', text: tab.icon || 'public',
+            style: i === 0 ? `color:${accent()};background:${tint()}` : '',
+          }),
+          el('span', { text: tab.label || '·' }),
+        ]))) : null,
+    );
+  }
+
+  renderTabs();
+  renderPreview();
+
+  return fieldset('studio', 'App studio', [
+    el('div', { class: 'studio' }, [
+      el('div', {}, [
+        field('Theme colour',
+          el('div', { class: 'colorrow' }, [color, hex]),
+          "The app's accent — buttons, highlights, the active tab. Use the website's brand colour."),
+        field('Navigation', styleSel,
+          'A bottom bar with a native top app bar. Needed for the Saved, Downloads and Settings screens.'),
+        tabsField,
+      ]),
+      el('div', { class: 'studio-side' }, [
+        preview,
+        el('p', { class: 'hint', style: 'text-align:center',
+          text: 'Rough preview — the built app uses real Material screens.' }),
+      ]),
+    ]),
+  ]);
+}
+
 function featuresSection(app, draft, markDirty) {
-  const enabled = new Set(app.features || []);
+  // Reads and writes draft.features rather than keeping its own copy, because
+  // the studio can also enable a module (adding a native tab switches it on)
+  // and the two must not overwrite each other.
   return fieldset('features', 'Features', [
     el('div', { class: 'checks' }, FEATURES.map(([name, hint]) =>
       el('label', { class: 'check' }, [
         el('input', {
-          type: 'checkbox', checked: enabled.has(name),
+          type: 'checkbox', checked: (draft.features || []).includes(name),
+          'data-feature': name,
           onchange: (event) => {
-            if (event.target.checked) enabled.add(name); else enabled.delete(name);
-            draft.features = [...enabled];
+            const current = new Set(draft.features || []);
+            if (event.target.checked) current.add(name); else current.delete(name);
+            draft.features = [...current];
             markDirty();
           },
         }),

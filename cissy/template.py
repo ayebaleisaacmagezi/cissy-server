@@ -20,7 +20,7 @@ import json
 import re
 from html import escape
 
-from .config import AppConfig
+from .config import AppConfig, NAV_NATIVE_TARGETS
 
 # Pinned rather than floating: a generated project should build the same way in
 # six months, and a surprise major version is not a debugging session anyone
@@ -33,6 +33,8 @@ DEPENDENCIES = {
     "path_provider": "^2.1.5",
     "open_filex": "^4.7.0",
     "app_links": "^6.4.1",
+    "connectivity_plus": "^6.1.0",
+    "shared_preferences": "^2.3.2",
     "flutter_launcher_icons": "^0.14.4",
 }
 
@@ -112,6 +114,10 @@ def pubspec(
         lines.append(f"  open_filex: {DEPENDENCIES['open_filex']}")
     if "Deep links" in features:
         lines.append(f"  app_links: {DEPENDENCIES['app_links']}")
+    if config.offline_fallback_enabled:
+        lines.append(f"  connectivity_plus: {DEPENDENCIES['connectivity_plus']}")
+    if "Saved items" in features:
+        lines.append(f"  shared_preferences: {DEPENDENCIES['shared_preferences']}")
 
     lines += [
         "",
@@ -163,14 +169,22 @@ def main_dart(config: AppConfig, splash_asset: str | None = None) -> str:
     has_pull_refresh = "Pull to refresh" in features
     has_camera = "Camera" in features
     has_uploads = "File upload" in features
+    has_saved = "Saved items" in features
+    has_settings = "Settings screen" in features
     has_fallback = config.offline_fallback_enabled
     has_bridge = has_share or has_location
+    has_nav = config.nav_style == "bottom" and len(config.nav_tabs) >= 2
+    has_downloads_screen = has_nav and has_downloads and any(
+        tab.get("target") == "native:downloads" for tab in config.nav_tabs
+    )
 
     out: list[str] = []
     add = out.append
 
     # ── imports ──
     add("import 'dart:async';")
+    if has_saved:
+        add("import 'dart:convert';")
     if has_downloads:
         add("import 'dart:io';")
     add("")
@@ -187,10 +201,16 @@ def main_dart(config: AppConfig, splash_asset: str | None = None) -> str:
         add("import 'package:path_provider/path_provider.dart';")
     if has_deep_links:
         add("import 'package:app_links/app_links.dart';")
+    if has_fallback:
+        add("import 'package:connectivity_plus/connectivity_plus.dart';")
+    if has_saved:
+        add("import 'package:shared_preferences/shared_preferences.dart';")
     add("")
 
     # ── constants ──
     domains = [d.lower() for d in config.allowed_domains]
+    add(f"const appTitle = {dart_string(config.display_name)};")
+    add(f"const appVersion = {dart_string(config.version_name)};")
     add(f"const homeUrl = {dart_string(config.website_url)};")
     add(f"const allowedDomains = <String>{json.dumps(domains)};")
     add(f"const requireHttps = {_dart_bool(config.require_https)};")
@@ -204,11 +224,20 @@ def main_dart(config: AppConfig, splash_asset: str | None = None) -> str:
 
     # ── entry point ──
     add(_MAIN_FUNCTION)
-    add(_APP_WIDGET.replace("__TITLE__", dart_string(config.display_name)))
-    add(_SCREEN_HEADER)
+    add(_app_widget(config, has_nav=has_nav))
+
+    if has_nav:
+        add(_root_shell(config, splash_asset=splash_asset))
+
+    if has_downloads:
+        add(_DOWNLOADS_DIRECTORY)
+
+    add(_screen_header(has_nav=has_nav))
 
     if has_fallback:
         add(
+            "  StreamSubscription<List<ConnectivityResult>>?"
+            " connectivitySubscription;\n"
             "  String? errorTitle;\n"
             "  String? errorMessage;\n"
             "  String? currentUrl;\n"
@@ -225,16 +254,27 @@ def main_dart(config: AppConfig, splash_asset: str | None = None) -> str:
         add("      onRefresh: () async => controller?.reload(),")
         add("    );")
     if has_deep_links:
-        add("    _listenForDeepLinks();")
+        if has_nav:
+            add("    if (widget.primary) {")
+            add("      _listenForDeepLinks();")
+            add("    }")
+        else:
+            add("    _listenForDeepLinks();")
+    if has_fallback:
+        add("    connectivitySubscription =")
+        add("        Connectivity().onConnectivityChanged.listen(_onConnectivityChanged);")
     add("  }")
     add("")
+
+    if has_fallback:
+        add(_CONNECTIVITY_CHANGED)
 
     if has_deep_links:
         add(_DEEP_LINKS)
 
     add(_LOAD_TIMEOUT)
-    add(_FINISH_LOAD)
-    add(_finish_failed_load(has_fallback))
+    add(_finish_load(has_nav))
+    add(_finish_failed_load(has_fallback, has_nav))
 
     if has_fallback:
         add(_FAILURE_CLASSIFIERS)
@@ -246,13 +286,17 @@ def main_dart(config: AppConfig, splash_asset: str | None = None) -> str:
 
     add(_DECIDE_NAVIGATION)
 
-    # `_load` is only reachable from deep links or the retry buttons. Emitting
-    # it otherwise leaves dead code, which fails the generated project's own
-    # flutter_lints run.
-    if has_deep_links or has_fallback:
+    # `_load` is only reachable from deep links, the retry buttons, or the
+    # shell's cross-tab navigation. Emitting it otherwise leaves dead code,
+    # which fails the generated project's own flutter_lints run.
+    if has_deep_links or has_fallback or has_nav:
         add(_load_method(has_fallback))
 
-    add(_HANDLE_BACK)
+    if has_nav:
+        add(_SHELL_BACK_HELPERS)
+    else:
+        add(_HANDLE_BACK)
+
     add(_page_policies(has_uploads))
 
     if has_bridge:
@@ -260,6 +304,9 @@ def main_dart(config: AppConfig, splash_asset: str | None = None) -> str:
 
     if has_downloads:
         add(_DOWNLOAD)
+
+    if has_saved and has_nav:
+        add(_SAVE_CURRENT_PAGE)
 
     add(_SHOW_MESSAGE)
     add(
@@ -270,12 +317,28 @@ def main_dart(config: AppConfig, splash_asset: str | None = None) -> str:
             has_bridge=has_bridge,
             has_downloads=has_downloads,
             has_camera=has_camera,
+            has_nav=has_nav,
+            has_saved=has_saved,
+            has_share=has_share,
         )
     )
-    add(_DISPOSE)
+    add(_dispose(has_fallback))
 
     if has_fallback:
         add(_ERROR_VIEW)
+
+    if has_saved:
+        add(_SAVED_STORE)
+        add(_SAVED_SCREEN)
+
+    if has_downloads_screen:
+        add(_DOWNLOADS_SCREEN)
+
+    if has_settings:
+        add(_SETTINGS_SCREEN)
+
+    if has_saved or has_downloads_screen:
+        add(_LIST_HELPERS)
 
     return "\n".join(out).rstrip() + "\n"
 
@@ -313,34 +376,64 @@ void main() {
 }
 """
 
-_APP_WIDGET = """\
-class GeneratedWebViewApp extends StatelessWidget {
-  const GeneratedWebViewApp({super.key});
+def _app_widget(config: AppConfig, *, has_nav: bool) -> str:
+    # The seed is the client's brand colour; the neutral grey default exists so
+    # an app with no colour set still looks intentional rather than half-themed.
+    seed = (
+        f"const Color(0xFF{config.theme_color[1:].upper()})"
+        if config.theme_color
+        else "Colors.grey"
+    )
+    home = "RootShell" if has_nav else "WebViewScreen"
+    return f"""\
+class GeneratedWebViewApp extends StatelessWidget {{
+  const GeneratedWebViewApp({{super.key}});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) {{
     return MaterialApp(
-      title: __TITLE__,
+      title: appTitle,
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.grey),
+        colorScheme: ColorScheme.fromSeed(seedColor: {seed}),
       ),
-      home: const WebViewScreen(),
+      home: const {home}(),
     );
-  }
-}
+  }}
+}}
 """
 
-_SCREEN_HEADER = """\
-class WebViewScreen extends StatefulWidget {
-  const WebViewScreen({super.key});
 
+def _screen_header(*, has_nav: bool) -> str:
+    if has_nav:
+        constructor = """\
+  const WebViewScreen({
+    super.key,
+    this.initialUrl = homeUrl,
+    this.primary = true,
+    this.onFirstLoad,
+  });
+
+  /// The page this tab opens on. Each web tab is its own WebView, kept alive
+  /// by the shell's IndexedStack so switching tabs does not reload anything.
+  final String initialUrl;
+
+  /// Only the primary tab listens for deep links and reports the first load
+  /// (which is what dismisses the shell's splash).
+  final bool primary;
+  final VoidCallback? onFirstLoad;
+"""
+    else:
+        constructor = "  const WebViewScreen({super.key});\n"
+    return f"""\
+class WebViewScreen extends StatefulWidget {{
+{constructor}
   @override
   State<WebViewScreen> createState() => _WebViewScreenState();
-}
+}}
 
-class _WebViewScreenState extends State<WebViewScreen> {
+class _WebViewScreenState extends State<WebViewScreen> {{
   InAppWebViewController? controller;
   PullToRefreshController? pullToRefreshController;
   Timer? loadTimeout;
@@ -381,21 +474,24 @@ _LOAD_TIMEOUT = """\
   }
 """
 
-_FINISH_LOAD = """\
-  void _finishLoad() {
-    loadTimeout?.cancel();
-    pullToRefreshController?.endRefreshing();
-    if (mounted) {
-      setState(() {
-        showSplash = false;
-        progress = 1;
-      });
-    }
-  }
-"""
+def _finish_load(has_nav: bool) -> str:
+    notify = "      widget.onFirstLoad?.call();\n" if has_nav else ""
+    return (
+        "  void _finishLoad() {\n"
+        "    loadTimeout?.cancel();\n"
+        "    pullToRefreshController?.endRefreshing();\n"
+        "    if (mounted) {\n"
+        "      setState(() {\n"
+        "        showSplash = false;\n"
+        "        progress = 1;\n"
+        "      });\n"
+        f"{notify}"
+        "    }\n"
+        "  }\n"
+    )
 
 
-def _finish_failed_load(has_fallback: bool) -> str:
+def _finish_failed_load(has_fallback: bool, has_nav: bool) -> str:
     body = [
         "  void _finishFailedLoad({",
         "    required String title,",
@@ -415,8 +511,25 @@ def _finish_failed_load(has_fallback: bool) -> str:
             "        errorMessage = message;",
             "        errorIsOffline = offline;",
         ]
-    body += ["      });", "    }", "  }", ""]
+    body += ["      });"]
+    if has_nav:
+        # A failed first load must also lift the shell splash, or an offline
+        # launch would sit on the splash forever with the error hidden under it.
+        body += ["      widget.onFirstLoad?.call();"]
+    body += ["    }", "  }", ""]
     return "\n".join(body)
+
+
+_CONNECTIVITY_CHANGED = """\
+  /// The recovery half of the offline screen: the moment the device is back
+  /// on a network, the page that failed reloads by itself.
+  void _onConnectivityChanged(List<ConnectivityResult> results) {
+    final online = results.any((result) => result != ConnectivityResult.none);
+    if (online && errorTitle != null && errorIsOffline) {
+      _retry();
+    }
+  }
+"""
 
 
 _FAILURE_CLASSIFIERS = """\
@@ -552,6 +665,31 @@ _HANDLE_BACK = """\
   }
 """
 
+# With a navigation shell the system back button is the shell's to handle, so
+# the web view only exposes its history instead of deciding what back means.
+_SHELL_BACK_HELPERS = """\
+  Future<bool> canGoBack() async => await controller?.canGoBack() == true;
+
+  Future<void> goBack() async {
+    await controller?.goBack();
+  }
+"""
+
+_SAVE_CURRENT_PAGE = """\
+  Future<void> _saveCurrentPage() async {
+    final url = (await controller?.getUrl())?.toString();
+    if (url == null) {
+      return;
+    }
+    final title = await controller?.getTitle();
+    await SavedStore.save(
+      title == null || title.isEmpty ? url : title,
+      url,
+    );
+    _showMessage('Saved. Find it in the Saved tab.');
+  }
+"""
+
 
 def _page_policies(has_uploads: bool) -> str:
     if has_uploads:
@@ -660,7 +798,7 @@ _DOWNLOAD = r"""  Future<void> _download(DownloadStartRequest request) async {
         );
       }
       final response = await httpRequest.close();
-      final directory = await getApplicationDocumentsDirectory();
+      final directory = await downloadsDirectory();
       final rawName = request.suggestedFilename ??
           (uri.pathSegments.isEmpty ? 'download' : uri.pathSegments.last);
       // A server-supplied filename reaches the filesystem, so path separators
@@ -696,6 +834,9 @@ def _build_method(
     has_bridge: bool,
     has_downloads: bool,
     has_camera: bool,
+    has_nav: bool = False,
+    has_saved: bool = False,
+    has_share: bool = False,
 ) -> str:
     splash = (
         "const SizedBox.expand()"
@@ -720,21 +861,55 @@ def _build_method(
     add = out.append
     add("  @override")
     add("  Widget build(BuildContext context) {")
-    add("    return PopScope(")
-    add("      canPop: false,")
-    add("      onPopInvokedWithResult: (didPop, result) async {")
-    add("        if (!didPop) {")
-    add("          await _handleBack();")
-    add("        }")
-    add("      },")
-    add("      child: Scaffold(")
-    add("        backgroundColor: Theme.of(context).colorScheme.surface,")
+    if has_nav:
+        # The shell owns the back button; each tab is a plain Scaffold with the
+        # native top app bar the navigation module promises.
+        add("    return Scaffold(")
+        add("        backgroundColor: Theme.of(context).colorScheme.surface,")
+        add("        appBar: AppBar(")
+        add("          title: const Text(appTitle),")
+        if has_saved or has_share:
+            add("          actions: [")
+        if has_saved:
+            add("            IconButton(")
+            add("              tooltip: 'Save this page',")
+            add("              icon: const Icon(Icons.bookmark_add_outlined),")
+            add("              onPressed: _saveCurrentPage,")
+            add("            ),")
+        if has_share:
+            add("            IconButton(")
+            add("              tooltip: 'Share this page',")
+            add("              icon: const Icon(Icons.share_outlined),")
+            add("              onPressed: () async {")
+            add("                final url = (await controller?.getUrl())?.toString();")
+            add("                if (url != null) {")
+            add("                  await SharePlus.instance.share(ShareParams(text: url));")
+            add("                }")
+            add("              },")
+            add("            ),")
+        if has_saved or has_share:
+            add("          ],")
+        add("        ),")
+    else:
+        add("    return PopScope(")
+        add("      canPop: false,")
+        add("      onPopInvokedWithResult: (didPop, result) async {")
+        add("        if (!didPop) {")
+        add("          await _handleBack();")
+        add("        }")
+        add("      },")
+        add("      child: Scaffold(")
+        add("        backgroundColor: Theme.of(context).colorScheme.surface,")
     add("        body: SafeArea(")
     add("          child: Stack(")
     add("            fit: StackFit.expand,")
     add("            children: [")
     add("              InAppWebView(")
-    add("                initialUrlRequest: URLRequest(url: WebUri(homeUrl)),")
+    if has_nav:
+        add("                initialUrlRequest:")
+        add("                    URLRequest(url: WebUri(widget.initialUrl)),")
+    else:
+        add("                initialUrlRequest: URLRequest(url: WebUri(homeUrl)),")
     add("                pullToRefreshController: pullToRefreshController,")
     add("                initialSettings: InAppWebViewSettings(")
     add(f"                  javaScriptEnabled: {_dart_bool(config.javascript_enabled)},")
@@ -778,9 +953,18 @@ def _build_method(
     add("                    setState(() => progress = value / 100);")
     add("                  }")
     add("                },")
-    add("                onLoadStop: (_, __) async {")
+    add("                onLoadStop: (_, url) async {")
     add("                  await _applyPagePolicies();")
     add("                  _finishLoad();")
+    if has_saved:
+        add("                  final visited = url?.toString();")
+        add("                  if (visited != null && visited.startsWith('http')) {")
+        add("                    final title = await controller?.getTitle();")
+        add("                    await SavedStore.recordVisit(")
+        add("                      title == null || title.isEmpty ? visited : title,")
+        add("                      visited,")
+        add("                    );")
+        add("                  }")
     add("                },")
     add("                onReceivedError: (_, request, error) {")
     add("                  if (request.isForMainFrame == true) {")
@@ -806,6 +990,22 @@ def _build_method(
         add("                    );")
     add("                  }")
     add("                },")
+    if has_fallback:
+        # A certificate that fails verification is never bypassed — Play
+        # rejects apps that let users click through SSL errors. The load is
+        # cancelled and the native "not secure" screen explains why.
+        add("                onReceivedServerTrustAuthRequest: (_, challenge) async {")
+        add("                  _finishFailedLoad(")
+        add("                    title: 'Connection not secure',")
+        add("                    message: \"The site's security certificate could \"")
+        add("                        'not be verified, so the page was blocked '")
+        add("                        'to protect you.',")
+        add("                    offline: false,")
+        add("                  );")
+        add("                  return ServerTrustAuthResponse(")
+        add("                    action: ServerTrustAuthResponseAction.CANCEL,")
+        add("                  );")
+        add("                },")
     if has_camera:
         add("                onPermissionRequest: (_, request) async {")
         add("                  final current = await controller?.getUrl();")
@@ -842,19 +1042,41 @@ def _build_method(
     add("            ],")
     add("          ),")
     add("        ),")
-    add("      ),")
-    add("    );")
+    if has_nav:
+        add("    );")
+    else:
+        add("      ),")
+        add("    );")
     add("  }")
     return "\n".join(out) + "\n"
 
 
-_DISPOSE = """\
-  @override
-  void dispose() {
-    loadTimeout?.cancel();
-    deepLinkSubscription?.cancel();
-    super.dispose();
+def _dispose(has_fallback: bool) -> str:
+    connectivity = (
+        "    connectivitySubscription?.cancel();\n" if has_fallback else ""
+    )
+    return (
+        "  @override\n"
+        "  void dispose() {\n"
+        "    loadTimeout?.cancel();\n"
+        "    deepLinkSubscription?.cancel();\n"
+        f"{connectivity}"
+        "    super.dispose();\n"
+        "  }\n"
+        "}\n"
+    )
+
+
+_DOWNLOADS_DIRECTORY = """\
+/// Downloads live in their own folder so the downloads screen can list them
+/// without guessing which files in the documents directory are the app's own.
+Future<Directory> downloadsDirectory() async {
+  final base = await getApplicationDocumentsDirectory();
+  final dir = Directory('${base.path}/downloads');
+  if (!dir.existsSync()) {
+    dir.createSync(recursive: true);
   }
+  return dir;
 }
 """
 
@@ -922,6 +1144,553 @@ class _ErrorView extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+"""
+
+
+# ── the navigation shell ─────────────────────────────────────────────────
+
+# Tab icon names (config.NAV_ICONS) to the IconData the generated app uses.
+_NAV_ICONS_DART = {
+    "home": "Icons.home_rounded",
+    "storefront": "Icons.storefront_rounded",
+    "menu_book": "Icons.menu_book_rounded",
+    "article": "Icons.article_rounded",
+    "shopping_bag": "Icons.shopping_bag_rounded",
+    "event": "Icons.event_rounded",
+    "call": "Icons.call_rounded",
+    "person": "Icons.person_rounded",
+    "bookmark": "Icons.bookmark_rounded",
+    "download": "Icons.download_rounded",
+    "settings": "Icons.settings_rounded",
+    "info": "Icons.info_rounded",
+}
+
+_NATIVE_DEFAULT_ICONS = {
+    "native:saved": "Icons.bookmark_rounded",
+    "native:downloads": "Icons.download_rounded",
+    "native:settings": "Icons.settings_rounded",
+}
+
+
+def _nav_icon(tab: dict[str, str]) -> str:
+    icon = tab.get("icon", "")
+    if icon in _NAV_ICONS_DART:
+        return _NAV_ICONS_DART[icon]
+    return _NATIVE_DEFAULT_ICONS.get(tab.get("target", ""), "Icons.public_rounded")
+
+
+def _resolve_target(config: AppConfig, target: str) -> str:
+    """A tab's target as a full URL. Paths are relative to the website."""
+    from urllib.parse import urljoin
+
+    return urljoin(config.website_url, target) if target.startswith("/") else target
+
+
+def _root_shell(config: AppConfig, *, splash_asset: str | None) -> str:
+    tabs = list(config.nav_tabs)
+    targets = [tab.get("target", "") for tab in tabs]
+    web_slots = []          # per tab: its web view's key index, or -1
+    web_count = 0
+    for target in targets:
+        if target in NAV_NATIVE_TARGETS:
+            web_slots.append(-1)
+        else:
+            web_slots.append(web_count)
+            web_count += 1
+    primary_index = web_slots.index(0)
+    saved_index = targets.index("native:saved") if "native:saved" in targets else -1
+    downloads_index = (
+        targets.index("native:downloads") if "native:downloads" in targets else -1
+    )
+    has_settings_tab = "native:settings" in targets
+    needs_open = saved_index >= 0 or has_settings_tab
+    has_splash = splash_asset is not None
+
+    out: list[str] = []
+    add = out.append
+    add("/// The app's skeleton: one live screen per tab, kept alive together so")
+    add("/// switching tabs never reloads a page or loses scroll position.")
+    add("class RootShell extends StatefulWidget {")
+    add("  const RootShell({super.key});")
+    add("")
+    add("  @override")
+    add("  State<RootShell> createState() => _RootShellState();")
+    add("}")
+    add("")
+    add("class _RootShellState extends State<RootShell> {")
+    add(f"  int index = {primary_index};")
+    if has_splash:
+        add("  bool showSplash = true;")
+    add("  final webKeys = List.generate(")
+    add(f"    {web_count},")
+    add("    (_) => GlobalKey<_WebViewScreenState>(),")
+    add("  );")
+    if saved_index >= 0:
+        add("  final savedKey = GlobalKey<_SavedScreenState>();")
+    if downloads_index >= 0:
+        add("  final downloadsKey = GlobalKey<_DownloadsScreenState>();")
+    add("")
+    add("  /// Which web view each tab uses; -1 marks a native screen.")
+    add(f"  static const webSlots = <int>{json.dumps(web_slots)};")
+    add("")
+    add("  late final List<Widget> pages = [")
+    for position, tab in enumerate(tabs):
+        target = targets[position]
+        slot = web_slots[position]
+        if target == "native:saved":
+            add("    SavedScreen(key: savedKey, onOpen: _openInPrimary),")
+        elif target == "native:downloads":
+            add("    DownloadsScreen(key: downloadsKey),")
+        elif target == "native:settings":
+            add("    SettingsScreen(onOpen: _openInPrimary),")
+        else:
+            url = dart_string(_resolve_target(config, target))
+            add("    WebViewScreen(")
+            add(f"      key: webKeys[{slot}],")
+            add(f"      initialUrl: {url},")
+            if slot == 0:
+                if has_splash:
+                    add("      onFirstLoad: _dismissSplash,")
+            else:
+                add("      primary: false,")
+            add("    ),")
+    add("  ];")
+    add("")
+    if has_splash:
+        add("  void _dismissSplash() {")
+        add("    if (mounted && showSplash) {")
+        add("      setState(() => showSplash = false);")
+        add("    }")
+        add("  }")
+        add("")
+    if needs_open:
+        add("  void _openInPrimary(String url) {")
+        add(f"    setState(() => index = {primary_index});")
+        add("    webKeys[0].currentState?._load(Uri.parse(url));")
+        add("  }")
+        add("")
+    add("  void _selectTab(int value) {")
+    add("    setState(() => index = value);")
+    if saved_index >= 0:
+        add(f"    if (value == {saved_index}) {{")
+        add("      savedKey.currentState?.refresh();")
+        add("    }")
+    if downloads_index >= 0:
+        add(f"    if (value == {downloads_index}) {{")
+        add("      downloadsKey.currentState?.refresh();")
+        add("    }")
+    add("  }")
+    add("")
+    add("  Future<void> _handleBack() async {")
+    add("    final slot = webSlots[index];")
+    add("    if (slot >= 0) {")
+    add("      final web = webKeys[slot].currentState;")
+    add("      if (await web?.canGoBack() == true) {")
+    add("        await web?.goBack();")
+    add("        return;")
+    add("      }")
+    add("    }")
+    add(f"    if (index != {primary_index}) {{")
+    add(f"      setState(() => index = {primary_index});")
+    add("      return;")
+    add("    }")
+    add("    SystemNavigator.pop();")
+    add("  }")
+    add("")
+    add("  @override")
+    add("  Widget build(BuildContext context) {")
+    add("    return PopScope(")
+    add("      canPop: false,")
+    add("      onPopInvokedWithResult: (didPop, result) async {")
+    add("        if (!didPop) {")
+    add("          await _handleBack();")
+    add("        }")
+    add("      },")
+    add("      child: Stack(")
+    add("        fit: StackFit.expand,")
+    add("        children: [")
+    add("          Scaffold(")
+    add("            body: IndexedStack(index: index, children: pages),")
+    add("            bottomNavigationBar: NavigationBar(")
+    add("              selectedIndex: index,")
+    add("              onDestinationSelected: _selectTab,")
+    add("              destinations: const [")
+    for tab in tabs:
+        add("                NavigationDestination(")
+        add(f"                  icon: Icon({_nav_icon(tab)}),")
+        add(f"                  label: {dart_string(tab.get('label', ''))},")
+        add("                ),")
+    add("              ],")
+    add("            ),")
+    add("          ),")
+    if has_splash:
+        add("          if (showSplash)")
+        add("            Image.asset(")
+        add(f"              {dart_string(splash_asset)},")
+        add("              fit: BoxFit.cover,")
+        add("              width: double.infinity,")
+        add("              height: double.infinity,")
+        add("            ),")
+    add("        ],")
+    add("      ),")
+    add("    );")
+    add("  }")
+    add("}")
+    add("")
+    return "\n".join(out)
+
+
+# ── the native module screens ────────────────────────────────────────────
+
+_SAVED_STORE = """\
+/// Bookmarks and recently-viewed pages, stored on the device so they work
+/// with no connection. Each entry is {title, url, ts}.
+class SavedStore {
+  static const _savedKey = 'saved_items';
+  static const _recentKey = 'recent_items';
+  static const _recentLimit = 20;
+
+  static Future<List<Map<String, dynamic>>> saved() => _read(_savedKey);
+
+  static Future<List<Map<String, dynamic>>> recent() => _read(_recentKey);
+
+  static Future<void> save(String title, String url) async {
+    final items = await _read(_savedKey);
+    items.removeWhere((item) => item['url'] == url);
+    items.insert(0, {
+      'title': title,
+      'url': url,
+      'ts': DateTime.now().toIso8601String(),
+    });
+    await _write(_savedKey, items);
+  }
+
+  static Future<void> removeSaved(String url) async {
+    final items = await _read(_savedKey);
+    items.removeWhere((item) => item['url'] == url);
+    await _write(_savedKey, items);
+  }
+
+  static Future<void> recordVisit(String title, String url) async {
+    final items = await _read(_recentKey);
+    items.removeWhere((item) => item['url'] == url);
+    items.insert(0, {
+      'title': title,
+      'url': url,
+      'ts': DateTime.now().toIso8601String(),
+    });
+    await _write(_recentKey, items.take(_recentLimit).toList());
+  }
+
+  static Future<List<Map<String, dynamic>>> _read(String key) async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(key);
+    if (raw == null) {
+      return [];
+    }
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is List) {
+        return decoded
+            .whereType<Map>()
+            .map((item) => Map<String, dynamic>.from(item))
+            .toList();
+      }
+    } on FormatException {
+      // Corrupt storage reads as empty rather than crashing the screen.
+    }
+    return [];
+  }
+
+  static Future<void> _write(
+    String key,
+    List<Map<String, dynamic>> items,
+  ) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(key, jsonEncode(items));
+  }
+}
+"""
+
+_SAVED_SCREEN = """\
+class SavedScreen extends StatefulWidget {
+  const SavedScreen({super.key, required this.onOpen});
+
+  final void Function(String url) onOpen;
+
+  @override
+  State<SavedScreen> createState() => _SavedScreenState();
+}
+
+class _SavedScreenState extends State<SavedScreen> {
+  List<Map<String, dynamic>> saved = [];
+  List<Map<String, dynamic>> recent = [];
+
+  @override
+  void initState() {
+    super.initState();
+    refresh();
+  }
+
+  Future<void> refresh() async {
+    final savedItems = await SavedStore.saved();
+    final recentItems = await SavedStore.recent();
+    if (mounted) {
+      setState(() {
+        saved = savedItems;
+        recent = recentItems;
+      });
+    }
+  }
+
+  Future<void> _remove(String url) async {
+    await SavedStore.removeSaved(url);
+    await refresh();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Saved')),
+      body: saved.isEmpty && recent.isEmpty
+          ? const EmptyNote(
+              icon: Icons.bookmark_outline_rounded,
+              message: 'Pages you save with the bookmark button appear here.',
+            )
+          : ListView(
+              children: [
+                if (saved.isNotEmpty) const SectionLabel('Saved pages'),
+                for (final item in saved)
+                  ListTile(
+                    leading: const Icon(Icons.bookmark_rounded),
+                    title: Text(
+                      (item['title'] ?? '').toString(),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    subtitle: Text(
+                      (item['url'] ?? '').toString(),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    trailing: IconButton(
+                      tooltip: 'Remove',
+                      icon: const Icon(Icons.delete_outline_rounded),
+                      onPressed: () => _remove((item['url'] ?? '').toString()),
+                    ),
+                    onTap: () => widget.onOpen((item['url'] ?? '').toString()),
+                  ),
+                if (recent.isNotEmpty) const SectionLabel('Recently viewed'),
+                for (final item in recent)
+                  ListTile(
+                    leading: const Icon(Icons.history_rounded),
+                    title: Text(
+                      (item['title'] ?? '').toString(),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    subtitle: Text(
+                      (item['url'] ?? '').toString(),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    onTap: () => widget.onOpen((item['url'] ?? '').toString()),
+                  ),
+              ],
+            ),
+    );
+  }
+}
+"""
+
+_DOWNLOADS_SCREEN = """\
+class DownloadsScreen extends StatefulWidget {
+  const DownloadsScreen({super.key});
+
+  @override
+  State<DownloadsScreen> createState() => _DownloadsScreenState();
+}
+
+class _DownloadsScreenState extends State<DownloadsScreen> {
+  List<File> files = [];
+
+  @override
+  void initState() {
+    super.initState();
+    refresh();
+  }
+
+  Future<void> refresh() async {
+    final dir = await downloadsDirectory();
+    final entries = dir.listSync().whereType<File>().toList()
+      ..sort(
+        (a, b) => b.statSync().modified.compareTo(a.statSync().modified),
+      );
+    if (mounted) {
+      setState(() => files = entries);
+    }
+  }
+
+  Future<void> _delete(File file) async {
+    await file.delete();
+    await refresh();
+  }
+
+  String _describe(File file) {
+    final stat = file.statSync();
+    final kb = (stat.size / 1024).clamp(1, double.infinity).round();
+    final size = kb >= 1024
+        ? '${(kb / 1024).toStringAsFixed(1)} MB'
+        : '$kb KB';
+    final modified = stat.modified;
+    final date = '${modified.year}-'
+        '${modified.month.toString().padLeft(2, '0')}-'
+        '${modified.day.toString().padLeft(2, '0')}';
+    return '$size · $date';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Downloads')),
+      body: files.isEmpty
+          ? const EmptyNote(
+              icon: Icons.download_rounded,
+              message: 'Files you download from the site are kept here, '
+                  'available offline.',
+            )
+          : ListView(
+              children: [
+                for (final file in files)
+                  ListTile(
+                    leading: const Icon(Icons.insert_drive_file_outlined),
+                    title: Text(
+                      file.uri.pathSegments.last,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    subtitle: Text(_describe(file)),
+                    trailing: IconButton(
+                      tooltip: 'Delete',
+                      icon: const Icon(Icons.delete_outline_rounded),
+                      onPressed: () => _delete(file),
+                    ),
+                    onTap: () => OpenFilex.open(file.path),
+                  ),
+              ],
+            ),
+    );
+  }
+}
+"""
+
+_SETTINGS_SCREEN = """\
+class SettingsScreen extends StatelessWidget {
+  const SettingsScreen({super.key, required this.onOpen});
+
+  final void Function(String url) onOpen;
+
+  Future<void> _clearCache(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    await InAppWebViewController.clearAllCache();
+    messenger.showSnackBar(
+      const SnackBar(content: Text('Cached pages cleared.')),
+    );
+  }
+
+  Future<void> _clearCookies(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    await CookieManager.instance().deleteAllCookies();
+    messenger.showSnackBar(
+      const SnackBar(content: Text('Browsing data cleared. You may need to '
+          'sign in to the site again.')),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Settings')),
+      body: ListView(
+        children: [
+          ListTile(
+            leading: const Icon(Icons.public_rounded),
+            title: const Text('Open the website'),
+            subtitle: const Text(homeUrl),
+            onTap: () => onOpen(homeUrl),
+          ),
+          ListTile(
+            leading: const Icon(Icons.cleaning_services_rounded),
+            title: const Text('Clear cached pages'),
+            subtitle: const Text('Frees space; pages load fresh next time.'),
+            onTap: () => _clearCache(context),
+          ),
+          ListTile(
+            leading: const Icon(Icons.cookie_outlined),
+            title: const Text('Clear browsing data'),
+            subtitle: const Text('Removes cookies and signs you out.'),
+            onTap: () => _clearCookies(context),
+          ),
+          const ListTile(
+            leading: Icon(Icons.info_outline_rounded),
+            title: Text('About'),
+            subtitle: Text('$appTitle · version $appVersion'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+"""
+
+_LIST_HELPERS = """\
+class SectionLabel extends StatelessWidget {
+  const SectionLabel(this.text, {super.key});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 18, 16, 6),
+      child: Text(
+        text,
+        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+      ),
+    );
+  }
+}
+
+class EmptyNote extends StatelessWidget {
+  const EmptyNote({super.key, required this.icon, required this.message});
+
+  final IconData icon;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 40),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 44, color: colors.onSurfaceVariant),
+            const SizedBox(height: 14),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: colors.onSurfaceVariant, height: 1.45),
+            ),
+          ],
         ),
       ),
     );
