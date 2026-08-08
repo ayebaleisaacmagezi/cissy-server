@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>You're offline</title>
+<!--
+  Sample custom no-internet screen for a CissyWeb2App app.
+
+  Rules for these screens:
+  · 100% self-contained — no external CSS, fonts, or images. Everything is
+    inline, because this page is shown precisely when there is no internet.
+  · The link href="app://retry" is the contract with the app: tapping it
+    reloads the real website.
+  · Change --accent to the app's brand colour.
+-->
+<style>
+  :root {
+    --accent: #b3561d;          /* the client's brand colour */
+    --ink: #2b2722;
+    --ink-soft: #85796d;
+    --bg-top: #fdf8f3;
+    --bg-bottom: #f4e9de;
+    --card: #ffffff;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body { height: 100%; }
+
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: linear-gradient(180deg, var(--bg-top), var(--bg-bottom));
+    color: var(--ink);
+    display: grid;
+    place-items: center;
+    padding: 28px;
+    text-align: center;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 340px; width: 100%; }
+
+  /* the illustration: a cloud losing its signal */
+  .art {
+    width: 168px; height: 168px; margin: 0 auto 6px;
+    animation: float 4.5s ease-in-out infinite;
+  }
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-9px); }
+  }
+
+  .dots { display: inline-flex; gap: 7px; margin-bottom: 22px; }
+  .dots i {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--accent); opacity: .25;
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+  .dots i:nth-child(2) { animation-delay: .25s; }
+  .dots i:nth-child(3) { animation-delay: .5s; }
+  @keyframes pulse {
+    0%, 100% { opacity: .25; transform: scale(1); }
+    50%      { opacity: 1;   transform: scale(1.25); }
+  }
+
+  h1 {
+    font-size: 24px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin-bottom: 10px;
+  }
+
+  p {
+    font-size: 15px;
+    line-height: 1.6;
+    color: var(--ink-soft);
+    margin-bottom: 30px;
+  }
+
+  .retry {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 9px;
+    width: 100%;
+    padding: 15px 22px;
+    border-radius: 999px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 15.5px;
+    font-weight: 600;
+    text-decoration: none;
+    box-shadow: 0 10px 24px -10px var(--accent);
+    transition: transform .15s ease, box-shadow .15s ease;
+  }
+  .retry:active { transform: scale(.97); box-shadow: 0 5px 14px -8px var(--accent); }
+  .retry svg { width: 18px; height: 18px; }
+
+  .note {
+    margin-top: 18px;
+    font-size: 12.5px;
+    color: var(--ink-soft);
+    opacity: .8;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .art, .dots i { animation: none; }
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+
+    <svg class="art" viewBox="0 0 200 200" fill="none" aria-hidden="true">
+      <!-- soft halo -->
+      <circle cx="100" cy="100" r="86" fill="var(--accent)" opacity="0.07"/>
+      <circle cx="100" cy="100" r="62" fill="var(--accent)" opacity="0.07"/>
+      <!-- cloud -->
+      <path d="M62 118a26 26 0 0 1 4-51.7A34 34 0 0 1 131 60a28 28 0 0 1 9 54.4"
+            fill="var(--card)" stroke="var(--ink)" stroke-width="5"
+            stroke-linecap="round" stroke-linejoin="round"/>
+      <!-- broken wifi arcs -->
+      <path d="M78 132a32 32 0 0 1 20-8" stroke="var(--accent)" stroke-width="6" stroke-linecap="round"/>
+      <path d="M122 132a32 32 0 0 0-9-6" stroke="var(--accent)" stroke-width="6" stroke-linecap="round" opacity=".45"/>
+      <path d="M70 146a44 44 0 0 1 18-10" stroke="var(--accent)" stroke-width="6" stroke-linecap="round" opacity=".7"/>
+      <path d="M130 146a44 44 0 0 0-12-8" stroke="var(--accent)" stroke-width="6" stroke-linecap="round" opacity=".3"/>
+      <!-- the dot of the wifi symbol -->
+      <circle cx="100" cy="160" r="7" fill="var(--accent)"/>
+      <!-- the slash -->
+      <path d="M136 108 74 168" stroke="var(--ink)" stroke-width="6" stroke-linecap="round"/>
+    </svg>
+
+    <div class="dots" aria-hidden="true"><i></i><i></i><i></i></div>
+
+    <h1>You&rsquo;re offline</h1>
+    <p>We couldn&rsquo;t reach the internet. Check your connection &mdash;
+       the moment you&rsquo;re back online, we&rsquo;ll reload this for you
+       automatically.</p>
+
+    <a class="retry" href="app://retry">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M21 12a9 9 0 1 1-2.64-6.36"/>
+        <polyline points="21 3 21 9 15 9"/>
+      </svg>
+      Try again
+    </a>
+
+    <div class="note">Waiting for a connection&hellip;</div>
+  </div>
+</body>
+</html>
