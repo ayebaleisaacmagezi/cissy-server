@@ -241,7 +241,13 @@ def main_dart(config: AppConfig, splash_asset: str | None = None) -> str:
             "  String? errorTitle;\n"
             "  String? errorMessage;\n"
             "  String? currentUrl;\n"
-            "  bool errorIsOffline = false;"
+            "  bool errorIsOffline = false;\n"
+            "  // Whether a retry is in flight, and whether the current load has\n"
+            "  // already failed. Together they keep the error screen up until a\n"
+            "  // page genuinely arrives — dropping it sooner flashes the broken\n"
+            "  // page underneath for the length of a failed attempt.\n"
+            "  bool retrying = false;\n"
+            "  bool loadFailed = false;"
         )
     add("")
 
@@ -273,7 +279,7 @@ def main_dart(config: AppConfig, splash_asset: str | None = None) -> str:
         add(_DEEP_LINKS)
 
     add(_LOAD_TIMEOUT)
-    add(_finish_load(has_nav))
+    add(_finish_load(has_nav, has_fallback))
     add(_finish_failed_load(has_fallback, has_nav))
 
     if has_fallback:
@@ -474,8 +480,20 @@ _LOAD_TIMEOUT = """\
   }
 """
 
-def _finish_load(has_nav: bool) -> str:
+def _finish_load(has_nav: bool, has_fallback: bool) -> str:
     notify = "      widget.onFirstLoad?.call();\n" if has_nav else ""
+    # The error screen comes down here and only here — on a load that finished
+    # without failing. onLoadStop also fires after a failure, which is what the
+    # loadFailed guard is for.
+    clear = (
+        "        if (!loadFailed) {\n"
+        "          errorTitle = null;\n"
+        "          errorMessage = null;\n"
+        "          retrying = false;\n"
+        "        }\n"
+        if has_fallback
+        else ""
+    )
     return (
         "  void _finishLoad() {\n"
         "    loadTimeout?.cancel();\n"
@@ -484,6 +502,7 @@ def _finish_load(has_nav: bool) -> str:
         "      setState(() {\n"
         "        showSplash = false;\n"
         "        progress = 1;\n"
+        f"{clear}"
         "      });\n"
         f"{notify}"
         "    }\n"
@@ -510,6 +529,8 @@ def _finish_failed_load(has_fallback: bool, has_nav: bool) -> str:
             "        errorTitle = title;",
             "        errorMessage = message;",
             "        errorIsOffline = offline;",
+            "        retrying = false;",
+            "        loadFailed = true;",
         ]
     body += ["      });"]
     if has_nav:
@@ -579,8 +600,27 @@ _FAILURE_CLASSIFIERS = """\
     );
   }
 
-  void _retry() {
-    _load(Uri.parse(currentUrl ?? homeUrl));
+  Future<void> _retry() async {
+    if (retrying) {
+      return;
+    }
+    // Ask the radio before asking the network: with no connectivity at all, a
+    // reload is doomed and would only churn. The spinner still acknowledges
+    // the tap, then the screen simply stays.
+    final results = await Connectivity().checkConnectivity();
+    final online = results.any((result) => result != ConnectivityResult.none);
+    if (!online) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => retrying = true);
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      if (mounted) {
+        setState(() => retrying = false);
+      }
+      return;
+    }
+    await _load(Uri.parse(currentUrl ?? homeUrl));
   }
 
   void _goHome() {
@@ -636,8 +676,11 @@ _DECIDE_NAVIGATION = """\
 
 
 def _load_method(has_fallback: bool) -> str:
-    clear = (
-        "      errorTitle = null;\n      errorMessage = null;\n"
+    # The error screen stays up while the new attempt runs; it is _finishLoad
+    # that takes it down, and only on success. `retrying` puts the spinner on
+    # the screen's button for the duration.
+    spin = (
+        "      retrying = errorTitle != null;\n"
         if has_fallback
         else ""
     )
@@ -645,7 +688,7 @@ def _load_method(has_fallback: bool) -> str:
         "  Future<void> _load(Uri uri) async {\n"
         "    setState(() {\n"
         "      progress = 0;\n"
-        f"{clear}"
+        f"{spin}"
         "    });\n"
         "    _startLoadTimeout();\n"
         "    await controller?.loadUrl(\n"
@@ -943,8 +986,10 @@ def _build_method(
     add("                    progress = 0;")
     if has_fallback:
         add("                    currentUrl = url?.toString() ?? currentUrl;")
-        add("                    errorTitle = null;")
-        add("                    errorMessage = null;")
+        # The error screen is NOT cleared here. A load that is about to fail
+        # also starts, and clearing on start flashes the broken page beneath
+        # the overlay until the failure comes back. _finishLoad clears it.
+        add("                    loadFailed = false;")
     add("                  });")
     add("                  _startLoadTimeout();")
     add("                },")
@@ -1031,6 +1076,7 @@ def _build_method(
         add("                  title: errorTitle!,")
         add("                  message: errorMessage ?? '',")
         add("                  isOffline: errorIsOffline,")
+        add("                  retrying: retrying,")
         add("                  onRetry: _retry,")
         add("                  onHome: _goHome,")
         add("                ),")
@@ -1088,6 +1134,7 @@ class _ErrorView extends StatelessWidget {
     required this.title,
     required this.message,
     required this.isOffline,
+    required this.retrying,
     required this.onRetry,
     required this.onHome,
   });
@@ -1095,6 +1142,7 @@ class _ErrorView extends StatelessWidget {
   final String title;
   final String message;
   final bool isOffline;
+  final bool retrying;
   final VoidCallback onRetry;
   final VoidCallback onHome;
 
@@ -1133,9 +1181,15 @@ class _ErrorView extends StatelessWidget {
               ),
               const SizedBox(height: 26),
               FilledButton.icon(
-                onPressed: onRetry,
-                icon: const Icon(Icons.replay_rounded, size: 18),
-                label: const Text('Try again'),
+                onPressed: retrying ? null : onRetry,
+                icon: retrying
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2.4),
+                      )
+                    : const Icon(Icons.replay_rounded, size: 18),
+                label: Text(retrying ? 'Trying…' : 'Try again'),
               ),
               const SizedBox(height: 6),
               TextButton(

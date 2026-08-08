@@ -63,9 +63,10 @@ class DartStringTest(unittest.TestCase):
 
     def test_a_hostile_app_name_cannot_break_out_of_the_literal(self):
         # The name reaches Dart source, so an unescaped quote would be a
-        # compile error at best and injected code at worst.
+        # compile error at best and injected code at worst. The title now
+        # lives in the appTitle constant rather than inline in MaterialApp.
         source = template.main_dart(make(app_name='Evil"); exit(0); //'))
-        self.assertIn('title: "Evil\\"); exit(0); //"', source)
+        self.assertIn('appTitle = "Evil\\"); exit(0); //"', source)
 
 
 class FeatureGatingTest(unittest.TestCase):
