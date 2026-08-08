@@ -332,23 +332,30 @@ class BuildRunner:
                 "above is the best place to look."
             )
 
+        used: set[str] = set()
         for source in found:
-            target = destination / source.name
+            name = _artifact_name(config, build, source, kind)
+            if name in used:
+                # Two sources mapping to one friendly name (should not happen,
+                # but a lost download beats an overwritten one).
+                name = source.name
+            used.add(name)
+            target = destination / name
             shutil.copy2(source, target)
             build.artifacts.append(
                 Artifact(
-                    name=source.name,
+                    name=name,
                     path=target,
                     size=target.stat().st_size,
                     kind=kind,
                 )
             )
-            build.log(f"Saved {source.name} ({_megabytes(target)})")
+            build.log(f"Saved {name} ({_megabytes(target)})")
 
         build.log("Packaging the project archive...")
         zip_path = archive.write_archive(
             project_dir,
-            destination / f"{config.id}.zip",
+            destination / f"{_artifact_stem(config, build)}-project.zip",
             root_name=template.project_name(config),
         )
         build.artifacts.append(
@@ -365,6 +372,20 @@ class BuildRunner:
 # Nearly every phone in use is arm64, so it goes first — it is the one to send
 # someone who just wants to install the app.
 _ABI_PRIORITY = ("arm64-v8a", "armeabi-v7a", "x86_64", "x86")
+
+
+def _artifact_stem(config: AppConfig, build: Build) -> str:
+    """`MyBusiness-1.0.0` — the name a person expects to see in Downloads,
+    rather than Flutter's app-release."""
+    base = re.sub(r"[^A-Za-z0-9]+", "", config.app_name or config.name) or config.id
+    return f"{base}-{build.version_name or config.version_name or '1.0.0'}"
+
+
+def _artifact_name(config: AppConfig, build: Build, source: Path, kind: str) -> str:
+    # Split APKs keep their ABI so the four files stay tellable apart.
+    abi = next((a for a in _ABI_PRIORITY if a in source.name), "")
+    suffix = f"-{abi}" if abi else ""
+    return f"{_artifact_stem(config, build)}{suffix}.{kind}"
 
 
 def _abi_order(path: Path) -> tuple[int, str]:

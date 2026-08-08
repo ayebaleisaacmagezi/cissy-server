@@ -586,7 +586,9 @@ class Application:
         config = store.get(request.params["app_id"])
         data = request.json()
 
-        output = data.get("output", "aab")
+        # APK is the default for the same reason it is first in the picker:
+        # a phone you can hand someone beats a Play upload you are not ready for.
+        output = data.get("output", "apk")
         if output not in ("apk", "aab"):
             raise ValidationError('Output must be "apk" or "aab".')
 

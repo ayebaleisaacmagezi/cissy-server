@@ -10,7 +10,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from cissy.build import Build, BuildRunner, _abi_order, classify
+from cissy.build import Build, BuildRunner, _abi_order, _artifact_name, classify
 from cissy.config import AppConfig
 from cissy.errors import ConflictError
 from cissy.store import ProjectStore
@@ -310,6 +310,47 @@ class AbiOrderTest(unittest.TestCase):
 
     def test_an_unsplit_apk_still_sorts(self):
         self.assertEqual(_abi_order(Path("app-release.apk"))[0], 4)
+
+
+class ArtifactNameTest(unittest.TestCase):
+    """Downloads are named after the app and its version, not after Flutter's
+    internal output files — `app-release.apk` tells the customer nothing."""
+
+    def build(self, version="2.1.0"):
+        return Build(
+            number=1, app_id="shop", owner="u1", output="apk",
+            version_name=version, version_code=7, signed=False,
+        )
+
+    def config(self, **overrides):
+        base = dict(id="shop", name="My Shop", app_name="My Shop",
+                    website_url="https://shop.example.com",
+                    android_package_id="com.example.shop",
+                    ios_bundle_id="com.example.shop")
+        base.update(overrides)
+        return AppConfig(**base)
+
+    def test_split_apks_keep_their_abi(self):
+        name = _artifact_name(
+            self.config(), self.build(), Path("app-arm64-v8a-release.apk"), "apk")
+        self.assertEqual(name, "MyShop-2.1.0-arm64-v8a.apk")
+
+    def test_a_universal_apk_is_just_name_and_version(self):
+        name = _artifact_name(
+            self.config(), self.build(), Path("app-release.apk"), "apk")
+        self.assertEqual(name, "MyShop-2.1.0.apk")
+
+    def test_bundles_are_named_the_same_way(self):
+        name = _artifact_name(
+            self.config(), self.build(), Path("app-release.aab"), "aab")
+        self.assertEqual(name, "MyShop-2.1.0.aab")
+
+    def test_a_name_with_nothing_usable_falls_back_to_the_app_id(self):
+        name = _artifact_name(
+            self.config(app_name="!!!", name="!!!"), self.build(),
+            Path("app-release.apk"), "apk")
+        self.assertEqual(name, "shop-2.1.0.apk")
+
 
 if __name__ == "__main__":
     unittest.main()

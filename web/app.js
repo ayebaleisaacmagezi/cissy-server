@@ -1376,9 +1376,11 @@ async function generateOnly(app) {
 function buildDialog(app) {
   const signed = app.keystore_file && app.key_alias;
 
+  // APK first: most people want something they can install on a phone right
+  // now. The Play bundle is the choice you make when you are publishing.
   const output = el('select', { class: 'input' }, [
+    el('option', { value: 'apk', text: 'APK — install on a phone' }),
     el('option', { value: 'aab', text: 'App bundle (.aab) — for Google Play' }),
-    el('option', { value: 'apk', text: 'APK — for sideloading and testing' }),
   ]);
   const storePassword = el('input', { class: 'input', type: 'password' });
   const keyPassword = el('input', { class: 'input', type: 'password' });
