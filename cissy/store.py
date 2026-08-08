@@ -121,7 +121,7 @@ class ProjectStore:
     def duplicate(self, app_id: str, new_name: str) -> AppConfig:
         """Copy an app's settings and assets under a new name.
 
-        Build history is deliberately not copied — it belongs to the original —
+        Build history is deliberately not copied - it belongs to the original -
         and neither is the keystore, since a new app needs its own signing
         identity and silently sharing one would be the wrong default.
         """

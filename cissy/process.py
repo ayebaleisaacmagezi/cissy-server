@@ -1,6 +1,6 @@
 """Running external commands and getting their output out line by line.
 
-Everything the server actually does is a subprocess — `flutter`, `zip`,
+Everything the server actually does is a subprocess - `flutter`, `zip`,
 `keytool`. Two shapes cover all of it: stream a long-running command's output
 somewhere, or capture a short one's.
 """

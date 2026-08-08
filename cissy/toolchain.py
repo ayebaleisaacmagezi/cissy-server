@@ -4,7 +4,7 @@ Every build failure is either "the toolchain is missing" or "the build genuinely
 broke", and the two look identical in a Gradle log. This module exists so the
 first case is answered before a build is ever started.
 
-Nothing here is hardcoded — the versions come from running the tools.
+Nothing here is hardcoded - the versions come from running the tools.
 """
 
 from __future__ import annotations
@@ -58,7 +58,7 @@ class Toolchain:
             versions = [f"{t.name} {t.version}" for t in self.tools if t.version]
             return " · ".join(versions) if versions else "Ready"
         missing = [tool.name for tool in self.tools if not tool.ok]
-        return f"Not ready — {', '.join(missing)}"
+        return f"Not ready - {', '.join(missing)}"
 
     def to_json(self) -> dict[str, object]:
         return {
@@ -98,7 +98,7 @@ def _java() -> Tool:
         return Tool(
             "Java",
             ok=False,
-            detail="Not on PATH. Android builds need a JDK — 17 is the safe choice.",
+            detail="Not on PATH. Android builds need a JDK - 17 is the safe choice.",
         )
     code, output = capture(["java", "-version"], timeout=30)
     if code != 0:

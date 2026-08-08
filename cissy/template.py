@@ -1,7 +1,7 @@
 """The generated app's source code.
 
 Ported from the desktop builder's `GeneratedAppTemplate`. This is the actual
-product — everything else in this server exists to run `flutter build` over what
+product - everything else in this server exists to run `flutter build` over what
 comes out of here.
 
 Written as plain string concatenation rather than a templating engine, because
@@ -10,7 +10,7 @@ or both of those. Values that come from user input go through `dart_string()`,
 which produces a correctly escaped Dart literal.
 
 Feature flags emit or omit whole blocks. Anything referenced by an emitted block
-must itself be emitted, or the generated project fails its own lint run — the
+must itself be emitted, or the generated project fails its own lint run - the
 `_load` and `_is_allowed_web_uri` conditions below exist for exactly that.
 """
 
@@ -61,7 +61,7 @@ _RESERVED = {"test", "async", "await", "class", "const", "new", "void", "is", "i
 
 
 def project_name(config: AppConfig) -> str:
-    """The pubspec package name — the last segment of the package id.
+    """The pubspec package name - the last segment of the package id.
 
     Taken from the package id rather than the app name so that
     `flutter create --org <rest> --project-name <last>` produces exactly the
@@ -140,7 +140,7 @@ def pubspec(
     if icon_asset:
         # Android reads the launcher icon from five mipmap densities and iOS
         # from about fifteen sizes in an appiconset. Generating those needs an
-        # image library, which this server does not have — so the sizes are
+        # image library, which this server does not have - so the sizes are
         # produced by flutter_launcher_icons on the build machine instead,
         # where the Dart toolchain already is.
         lines += [
@@ -244,7 +244,7 @@ def main_dart(config: AppConfig, splash_asset: str | None = None) -> str:
             "  bool errorIsOffline = false;\n"
             "  // Whether a retry is in flight, and whether the current load has\n"
             "  // already failed. Together they keep the error screen up until a\n"
-            "  // page genuinely arrives — dropping it sooner flashes the broken\n"
+            "  // page genuinely arrives - dropping it sooner flashes the broken\n"
             "  // page underneath for the length of a failed attempt.\n"
             "  bool retrying = false;\n"
             "  bool loadFailed = false;"
@@ -482,7 +482,7 @@ _LOAD_TIMEOUT = """\
 
 def _finish_load(has_nav: bool, has_fallback: bool) -> str:
     notify = "      widget.onFirstLoad?.call();\n" if has_nav else ""
-    # The error screen comes down here and only here — on a load that finished
+    # The error screen comes down here and only here - on a load that finished
     # without failing. onLoadStop also fires after a failure, which is what the
     # loadFailed guard is for.
     clear = (
@@ -1036,7 +1036,7 @@ def _build_method(
     add("                  }")
     add("                },")
     if has_fallback:
-        # A certificate that fails verification is never bypassed — Play
+        # A certificate that fails verification is never bypassed - Play
         # rejects apps that let users click through SSL errors. The load is
         # cancelled and the native "not secure" screen explains why.
         add("                onReceivedServerTrustAuthRequest: (_, challenge) async {")
@@ -1889,8 +1889,8 @@ def launch_background(has_splash: bool) -> str:
 def splash_icon_drawable() -> str:
     """A fully transparent drawable for the Android 12+ system splash icon.
 
-    From Android 12 the OS itself draws a launch screen — by default the app
-    icon centred on a plain background — before the app process even starts,
+    From Android 12 the OS itself draws a launch screen - by default the app
+    icon centred on a plain background - before the app process even starts,
     and no app can opt out of that phase. What it CAN do is hand the phase a
     transparent icon, which turns "the icon flashes, then the splash" into
     "a plain surface, then the splash".
@@ -1930,7 +1930,7 @@ def styles_v31(*, night: bool) -> str:
 def ios_usage_descriptions(config: AppConfig) -> dict[str, str]:
     """Info.plist reasons for every permission the app can request.
 
-    A missing one is not a warning — iOS terminates the app the moment the
+    A missing one is not a warning - iOS terminates the app the moment the
     permission is requested, and App Store review rejects the build.
     """
     features = set(config.features)

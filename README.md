@@ -13,11 +13,11 @@ ideas, not code.
 ## What works
 
 Create an app, configure it, upload an icon and a keystore, press Build, watch
-the log stream, download a signed APK or AAB — and the whole Flutter project as
+the log stream, download a signed APK or AAB - and the whole Flutter project as
 a `.zip` for the iOS half.
 
 Mobile-money subscriptions through Collecto, running against a simulator until
-there is an account — see below.
+there is an account - see below.
 
 Not yet: there are no user accounts, so the subscription is server-wide rather
 than per-customer. Old build artifacts are never deleted.
@@ -44,7 +44,7 @@ Verify with `flutter doctor` before expecting a build to work.
 python3 server.py
 ```
 
-No venv, no `pip install` — it uses only the standard library. Listens on
+No venv, no `pip install` - it uses only the standard library. Listens on
 `127.0.0.1:8080`.
 
 | Variable | Default | |
@@ -72,7 +72,7 @@ python3 -m unittest discover -s tests -t . -q
 ## Layout
 
 ```
-server.py        the backend — runs commands, streams logs
+server.py        the backend - runs commands, streams logs
 web/             the UI (plain HTML/CSS/JS, no build step)
 projects/        runtime data, gitignored
   <app-id>/
@@ -106,20 +106,20 @@ That shapes the code more than anything else here:
 - The payment record is written to disk **before** the gateway is called. If the
   process dies in between, the reference is the only thread back to the money.
 - A background sweeper chases every open payment, so a prompt approved after the
-  browser closed still activates the plan. Close the tab, restart the server —
+  browser closed still activates the plan. Close the tab, restart the server -
   it still finishes.
 - A 2xx is not a payment. `data.requestToPay: true` only means the call was
   accepted; only `data.status == SUCCESSFUL` is money.
 - Timeouts, dropped connections and non-JSON bodies mean *unknown*, so they keep
   the payment open. Reading them as failure would keep someone's money and give
   them nothing.
-- `requestToPay` is never retried automatically — a repeat could mean two prompts
+- `requestToPay` is never retried automatically - a repeat could mean two prompts
   and two debits. Status lookups are reads, so they retry freely.
 
 ### Demo mode
 
 With no `CISSY_COLLECTO_USERNAME` and `CISSY_COLLECTO_KEY`, payments run against
-an in-process simulator and the Billing screen grows a **demo handset** — a panel
+an in-process simulator and the Billing screen grows a **demo handset** - a panel
 that stands in for the customer tapping their PIN. It can also be told to
 decline, to never answer, to drop a connection, or to return something that is
 not JSON, because those are the paths worth watching before real money is
@@ -135,4 +135,4 @@ else keeps working.
 Keystore passwords are never written to `config.json` and never committed. They
 are entered per build, used to write `android/key.properties`, and that file is
 deleted afterwards and excluded from any download. A leaked upload key cannot be
-revoked — Google will not reset it, and you lose the ability to update the app.
+revoked - Google will not reset it, and you lose the ability to update the app.

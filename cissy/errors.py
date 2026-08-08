@@ -1,7 +1,7 @@
 """Errors that carry an HTTP status and a sentence meant for a human.
 
 Every message here is shown directly in the browser, so it says what is wrong
-and what to do about it — never a stack trace or a raw tool error.
+and what to do about it - never a stack trace or a raw tool error.
 """
 
 

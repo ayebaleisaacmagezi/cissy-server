@@ -106,7 +106,7 @@ def main() -> int:
     else:
         print("Payments and SMS: demo. No money moves and no texts are sent.")
     if not state.ok:
-        # Not fatal — the UI is still worth reaching, and it explains what is
+        # Not fatal - the UI is still worth reaching, and it explains what is
         # missing far better than a failed build would.
         for tool in state.tools:
             if not tool.ok:

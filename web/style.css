@@ -1,10 +1,10 @@
 /* ─────────────────────────────────────────────────────────────────────────
-   Cissyweb2app — the signed-in app.
+   Cissyweb2app - the signed-in app.
 
    One design language with the landing page: white ground, the brand blue
-   #01a6ff and the brand grey #6d6a6a, solid colors only — no gradients, no
+   #01a6ff and the brand grey #6d6a6a, solid colors only - no gradients, no
    eyebrow labels. Hairline borders and layered soft shadows for depth. The
-   build console is the one deliberately dark surface — the machine at the
+   build console is the one deliberately dark surface - the machine at the
    middle of the product. Type is Inter; icons are Material Symbols Outlined.
    ───────────────────────────────────────────────────────────────────────── */
 
@@ -21,7 +21,7 @@
   --elevated: #dff2ff;
   --soft: #a9dfff;
 
-  /* ink — the brand grey family */
+  /* ink - the brand grey family */
   --ink: #262525;
   --ink-2: #6d6a6a;
   --ink-3: #8e8b8b;
@@ -30,7 +30,7 @@
   --hair: rgba(38, 37, 37, 0.13);
   --hair-2: rgba(38, 37, 37, 0.07);
 
-  /* semantics — kept */
+  /* semantics - kept */
   --ok: #35c978;
   --ok-ink: #1d7a48;
   --warn: #f0b84b;
@@ -64,7 +64,7 @@ body {
   font-family: "SF Mono", "Cascadia Mono", ui-monospace, Consolas, monospace;
 }
 
-/* Material Symbols Outlined — the glyph is the element's text, rendered as a
+/* Material Symbols Outlined - the glyph is the element's text, rendered as a
  * ligature by the font. Sized here so every use inherits one look. */
 .material-symbols-outlined {
   font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24;
@@ -195,7 +195,7 @@ body {
 .pill.warn { background: rgba(240, 184, 75, 0.12); border-color: rgba(240, 184, 75, 0.4);  color: var(--warn-ink); }
 .pill.err  { background: rgba(240, 93, 104, 0.1);  border-color: rgba(240, 93, 104, 0.35); color: var(--err-ink); }
 
-/* a plain pill with a dot is a live state — let it breathe */
+/* a plain pill with a dot is a live state - let it breathe */
 .pill .dot { animation: pulse 1.6s var(--ease) infinite; }
 .pill.ok .dot, .pill.warn .dot, .pill.err .dot { animation: none; }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
@@ -451,7 +451,7 @@ aside.summary h4 {
 .drop b { display: block; color: var(--ink); font-size: 13.5px; margin-bottom: 3px; word-break: break-all; }
 .drop .btn { margin: 10px 4px 0; }
 
-/* ── the build console — the machine itself ────────────────────────────── */
+/* ── the build console - the machine itself ────────────────────────────── */
 
 .console {
   background: var(--console); color: #cfcdcd;
@@ -580,7 +580,7 @@ body.signed-out .content { padding: 0; max-width: none; }
   font-size: 13px; color: var(--ink-2); margin: 0 0 12px; font-weight: 700;
 }
 
-/* the pretend phone — drawn as a mockup, so nobody wonders if it moves money */
+/* the pretend phone - drawn as a mockup, so nobody wonders if it moves money */
 .handset { border-style: dashed; }
 .handset-screen {
   background: var(--accent-dim); border: 1px solid var(--soft);
@@ -678,7 +678,7 @@ body.signed-out .content { padding: 0; max-width: none; }
 }
 .tabedit .input { margin: 0; }
 
-/* the phone preview — the frame is the border, the screen is the box */
+/* the phone preview - the frame is the border, the screen is the box */
 .phone-mock {
   width: 218px; height: 430px; display: flex; flex-direction: column;
   background: var(--surface); border: 9px solid var(--console);

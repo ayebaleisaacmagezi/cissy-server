@@ -1,6 +1,6 @@
 """Tests for the generated app's source.
 
-These assert on strings, which cannot prove the Dart compiles — that is done by
+These assert on strings, which cannot prove the Dart compiles - that is done by
 generating a real project and running `flutter analyze` on it, for both a
 fully-featured and a bare configuration. What is locked in here is the reasoning
 that is easy to break silently: which blocks appear for which features, and that

@@ -1,7 +1,7 @@
 """HTTP layer: routing, static files, and turning errors into readable JSON.
 
 A hand-rolled router on top of `http.server` rather than a framework. The API
-is a dozen endpoints and the only awkward requirement — streaming a build log —
+is a dozen endpoints and the only awkward requirement - streaming a build log -
 is easier to do directly than through most frameworks anyway.
 
 Uploads arrive as raw PUT bodies rather than multipart forms. That is the one
@@ -178,7 +178,7 @@ class Application:
 
         # Live only when both a username and a key are present. The default is
         # the simulator rather than a half-configured client, because a client
-        # missing its key fails at the worst possible moment — mid-payment —
+        # missing its key fails at the worst possible moment - mid-payment -
         # instead of at startup.
         settings = collecto or CollectoSettings.from_env()
         self.collecto_settings = settings
@@ -533,7 +533,7 @@ class Application:
         if not request.body:
             raise ValidationError("The uploaded file was empty.")
 
-        # The stored name is derived, never taken from the client — a supplied
+        # The stored name is derived, never taken from the client - a supplied
         # name reaches the filesystem, and "../../config.json" is a valid one.
         name = f"{slot}{suffix}"
         assets = store.assets_dir(app_id)
@@ -596,7 +596,7 @@ class Application:
 
         # Settle the version code before building so the artifact and the stored
         # version can never disagree. This only moves it when the current one
-        # has actually been built under — a first build keeps the code it was
+        # has actually been built under - a first build keeps the code it was
         # created with rather than shipping as 2.
         if data.get("bump_version", True):
             resolved = config.next_version_code(store.used_version_codes(config.id))
@@ -645,8 +645,8 @@ class Application:
         store = request.workspace
         store.get(app_id)
 
-        # A running build has no directory yet — the record is written when it
-        # finishes — so listing directories alone would hide the one build the
+        # A running build has no directory yet - the record is written when it
+        # finishes - so listing directories alone would hide the one build the
         # user most wants to see, and a reloaded page would show nothing
         # happening while Gradle was busy.
         numbers = set(store.build_numbers(app_id))
@@ -717,7 +717,7 @@ class Application:
         """Prefer the live build, fall back to what was written to disk.
 
         In-memory state is lost on restart, but a finished build's record is
-        worth keeping — the history is most of the value of the overview screen.
+        worth keeping - the history is most of the value of the overview screen.
         """
         app_id = request.params["app_id"]
         live = self.builds.get(request.owner.id, app_id, number)
@@ -761,8 +761,8 @@ class Application:
             phone=str(data.get("phone") or user.phone),
             owner=user.id,
         )
-        # A demo scenario is chosen up front so the awkward paths — a decline,
-        # a prompt nobody answers, a dropped connection — can be shown on
+        # A demo scenario is chosen up front so the awkward paths - a decline,
+        # a prompt nobody answers, a dropped connection - can be shown on
         # purpose instead of waited for.
         scenario = str(data.get("scenario") or "").strip()
         if scenario and isinstance(self.gateway, DemoGateway):
@@ -806,7 +806,7 @@ class Application:
     def demo_handset(self, request: Request) -> dict[str, Any]:
         """Stand in for the customer tapping their PIN.
 
-        There is no live equivalent and there must never be one — this exists
+        There is no live equivalent and there must never be one - this exists
         only while `DemoGateway` is in play.
         """
         if not isinstance(self.gateway, DemoGateway):
@@ -1111,7 +1111,7 @@ def _cookie(headers: Any, name: str) -> str:
     """One cookie's value, or an empty string.
 
     Parsed by hand rather than with http.cookies, which raises on values this
-    has no business rejecting over — the password is chosen by whoever starts
+    has no business rejecting over - the password is chosen by whoever starts
     the server.
     """
     raw = headers.get("Cookie", "") or ""
@@ -1143,7 +1143,7 @@ def _domains(url: Any) -> list[str]:
     """Seed the allow-list from the site's own host.
 
     Almost every app wants exactly this, and an empty allow-list would send
-    every link to the external browser — surprising behaviour for a new app.
+    every link to the external browser - surprising behaviour for a new app.
     """
     if not isinstance(url, str) or not url.strip():
         return []

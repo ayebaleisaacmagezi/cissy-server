@@ -1,7 +1,7 @@
 """End-to-end tests over a real socket.
 
 Exercising the actual HTTP server rather than calling handlers directly, because
-the parts most likely to break — routing, status codes, auth, path traversal —
+the parts most likely to break - routing, status codes, auth, path traversal -
 only exist at that layer.
 """
 
@@ -227,8 +227,8 @@ class RunningBuildTest(ServerTestCase):
         self.app.builds._history[(owner, "portal", number)] = self.app.builds._current
 
     def test_a_running_build_appears_in_the_history(self):
-        # It has no directory on disk yet — the record is only written when it
-        # finishes — so listing directories alone would hide it.
+        # It has no directory on disk yet - the record is only written when it
+        # finishes - so listing directories alone would hide it.
         self.fake_running()
         status, payload = self.request("GET", "/api/apps/portal/builds")
         self.assertEqual(status, 200)

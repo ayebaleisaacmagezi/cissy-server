@@ -1,6 +1,6 @@
 'use strict';
 
-/* Cissyweb2app — browser client.
+/* Cissyweb2app - browser client.
  *
  * No framework and no build step: the whole UI is this file, so editing it on
  * the server means a refresh rather than a toolchain.
@@ -22,7 +22,7 @@ const FEATURES = [
   ['Settings screen', 'Native settings: clear cache, browsing data, about'],
 ];
 
-// Mirrors NAV_ICONS in cissy/config.py — the set the generated app can render.
+// Mirrors NAV_ICONS in cissy/config.py - the set the generated app can render.
 const NAV_ICONS = ['home', 'storefront', 'menu_book', 'article', 'shopping_bag',
   'event', 'call', 'person', 'bookmark', 'download', 'settings', 'info'];
 
@@ -152,7 +152,7 @@ async function upload(appId, slot, file) {
 
 /* Reads a server-sent event stream over fetch rather than EventSource.
  * EventSource cannot send headers, which would mean putting the password in a
- * query string — where it lands in proxy logs and browser history. */
+ * query string - where it lands in proxy logs and browser history. */
 async function readEvents(path, { onLine, onDone }) {
   const response = await fetch(path, { headers: authHeaders() });
   if (!response.ok || !response.body) return;
@@ -261,7 +261,7 @@ async function refreshHealth(force = false) {
   for (const tool of health.tools) {
     foot.append(el('div', { class: 'ln', text: tool.ok
       ? `${tool.name} ${tool.version}`
-      : `${tool.name} — ${tool.detail}` }));
+      : `${tool.name} - ${tool.detail}` }));
   }
 }
 
@@ -461,7 +461,7 @@ const APP_PAGES = [
   ['identity', 'Identity', 'identity', 'What the app is called, and the IDs the stores know it by.'],
   ['webview', 'WebView', 'webview', 'The website the app wraps, and how it behaves.'],
   ['branding', 'Branding', 'branding', 'The icon and the splash screen.'],
-  ['studio', 'Studio', 'studio', 'Modules, theme and navigation — with a live preview.'],
+  ['studio', 'Studio', 'studio', 'Modules, theme and navigation - with a live preview.'],
   ['features', 'Features', 'features', 'The fine print for every module the app ships with.'],
   ['offline', 'Offline', 'offline', 'What the app does when the connection is gone.'],
   ['signing', 'Signing', 'signing', 'The key that proves every release comes from you.'],
@@ -651,7 +651,7 @@ function newAppDialog() {
 
   const close = openModal(
     'New app',
-    'All of this can change later — except the package ID, once it is on Play.',
+    'All of this can change later - except the package ID, once it is on Play.',
     [
       field('App name', name),
       field('Website URL', url, 'The page the app opens on launch.'),
@@ -752,7 +752,7 @@ async function showAppPage(appId, section) {
 }
 
 /* Back and Next at the foot of every page, so finishing one step leads to the
- * next without hunting the sidebar. Next saves first — moving on must never
+ * next without hunting the sidebar. Next saves first - moving on must never
  * shed the edits, and a failed save keeps you here with the reason on screen. */
 function pager(app, section, save) {
   const index = APP_PAGES.findIndex(([id]) => id === section);
@@ -774,7 +774,7 @@ function pager(app, section, save) {
 }
 
 /* One card per page. The page heading already names the section, so the card
- * itself carries no legend — except when a page stacks more than one card and
+ * itself carries no legend - except when a page stacks more than one card and
  * each needs its own title. */
 function fieldset(id, legend, children) {
   return el('section', { class: 'group', id: 'sec-' + id },
@@ -790,7 +790,7 @@ function checkbox(label, checked, onchange, hint) {
 
 function kv(key, value) {
   return el('div', { class: 'kv' }, [
-    el('span', { text: key }), el('span', { text: value || '—' }),
+    el('span', { text: key }), el('span', { text: value || '-' }),
   ]);
 }
 
@@ -874,7 +874,7 @@ function buildRow(app, build) {
     ]),
     el('td', {}, [
       el('div', { text: build.started_at
-        ? shortDate(new Date(build.started_at * 1000).toISOString()) : '—' }),
+        ? shortDate(new Date(build.started_at * 1000).toISOString()) : '-' }),
       el('div', { class: 'app-url', text: seconds(build.duration) }),
     ]),
     el('td', {}, [
@@ -900,7 +900,7 @@ function identitySection(draft, bind) {
     el('div', { class: 'row2' }, [
       field('Android package ID',
         el('input', { class: 'input mono', value: draft.android_package_id || '', disabled: true }),
-        'Permanent — duplicate the app to change it.'),
+        'Permanent - duplicate the app to change it.'),
       field('iOS bundle ID',
         bind('ios_bundle_id', el('input', { class: 'input mono', value: draft.ios_bundle_id || '' }))),
     ]),
@@ -1022,7 +1022,7 @@ const STUDIO_SOON = [
 
 function studioPage(app, draft, markDirty) {
   // The tabs get edited in place, so they must not share objects with the
-  // saved app — a discarded draft would otherwise still have changed it.
+  // saved app - a discarded draft would otherwise still have changed it.
   draft.nav_tabs = (draft.nav_tabs || []).map((tab) => ({ ...tab }));
   draft.nav_style = draft.nav_style || 'none';
   draft.features = [...(draft.features || [])];
@@ -1110,9 +1110,9 @@ function studioPage(app, draft, markDirty) {
     markDirty(); renderPreview();
   });
 
-  /* navigation style — settable from the select and from the library tile */
+  /* navigation style - settable from the select and from the library tile */
   const styleSel = el('select', { class: 'input' }, [
-    el('option', { value: 'none', text: 'No navigation — just the website',
+    el('option', { value: 'none', text: 'No navigation - just the website',
       selected: draft.nav_style !== 'bottom' }),
     el('option', { value: 'bottom', text: 'Bottom navigation bar',
       selected: draft.nav_style === 'bottom' }),
@@ -1189,7 +1189,7 @@ function studioPage(app, draft, markDirty) {
     if (draft.nav_style !== 'bottom') return;
     clear(tabsBox).append(...draft.nav_tabs.map(tabRow));
     tabsField.append(
-      el('label', { text: 'Tabs (2–5)' }),
+      el('label', { text: 'Tabs (2-5)' }),
       tabsBox,
       draft.nav_tabs.length < 5 ? el('button', {
         class: 'btn sm', text: '+ Add tab',
@@ -1262,13 +1262,13 @@ function studioPage(app, draft, markDirty) {
     el('div', { class: 'studio-stage' }, [
       preview,
       el('p', { class: 'hint', style: 'text-align:center',
-        text: 'Live preview — the built app uses real Material screens in this colour.' }),
+        text: 'Live preview - the built app uses real Material screens in this colour.' }),
     ]),
     el('section', { class: 'group' }, [
       el('h3', { class: 'group-title', text: 'Appearance' }),
       field('Theme colour',
         el('div', { class: 'colorrow' }, [color, hex]),
-        "The app's accent — buttons, highlights, the active tab. Use the website's brand colour."),
+        "The app's accent - buttons, highlights, the active tab. Use the website's brand colour."),
       field('Navigation', styleSel,
         'A bottom bar with a native top app bar. Needed for the Saved, Downloads and Settings screens.'),
       tabsField,
@@ -1346,7 +1346,7 @@ function signingSection(app) {
   ]));
 
   children.push(el('p', { class: 'hint', style: 'margin-bottom:14px',
-    text: 'Passwords are never stored — you enter them each time you build. A leaked upload key cannot be revoked, so keep a backup somewhere safe.' }));
+    text: 'Passwords are never stored - you enter them each time you build. A leaked upload key cannot be revoked, so keep a backup somewhere safe.' }));
 
   return fieldset('signing', '', children);
 }
@@ -1354,12 +1354,12 @@ function signingSection(app) {
 function buildSection(app) {
   return fieldset('build', '', [
     el('p', { class: 'sub',
-      text: 'Runs on this server. One build at a time, typically 3–5 minutes.' }),
+      text: 'Runs on this server. One build at a time, typically 3-5 minutes.' }),
     el('button', { class: 'btn primary', text: 'Build now', onclick: () => buildDialog(app) }),
     el('button', { class: 'btn', style: 'margin-left:8px',
       text: 'Generate project only', onclick: () => generateOnly(app) }),
     el('p', { class: 'hint', style: 'margin-top:12px',
-      text: 'Generating writes the Flutter project without building it — the fastest way to get the iOS project onto a Mac.' }),
+      text: 'Generating writes the Flutter project without building it - the fastest way to get the iOS project onto a Mac.' }),
   ]);
 }
 
@@ -1379,8 +1379,8 @@ function buildDialog(app) {
   // APK first: most people want something they can install on a phone right
   // now. The Play bundle is the choice you make when you are publishing.
   const output = el('select', { class: 'input' }, [
-    el('option', { value: 'apk', text: 'APK — install on a phone' }),
-    el('option', { value: 'aab', text: 'App bundle (.aab) — for Google Play' }),
+    el('option', { value: 'apk', text: 'APK - install on a phone' }),
+    el('option', { value: 'aab', text: 'App bundle (.aab) - for Google Play' }),
   ]);
   const storePassword = el('input', { class: 'input', type: 'password' });
   const keyPassword = el('input', { class: 'input', type: 'password' });
@@ -1405,7 +1405,7 @@ function buildDialog(app) {
     );
   } else {
     body.push(el('div', { class: 'banner warn' }, [
-      el('b', { text: 'No keystore — this will use a debug key' }),
+      el('b', { text: 'No keystore - this will use a debug key' }),
       'Google Play will reject the result. Fine for testing on a device.',
     ]));
   }
@@ -1430,7 +1430,7 @@ function buildDialog(app) {
 
 /* Reattaching matters because the build outlives the page. It runs in a thread
  * on the server, so a reload, a closed tab or a dropped connection leaves it
- * running — and without a URL of its own there was no way back to it. */
+ * running - and without a URL of its own there was no way back to it. */
 async function showBuild(appId, number) {
   const [{ app }, { build }] = await Promise.all([
     api('GET', '/api/apps/' + appId),
@@ -1441,7 +1441,7 @@ async function showBuild(appId, number) {
   state.section = null;
   state.dirty = false;
   renderSidebar();
-  document.getElementById('crumb').textContent = `${app.name} — build #${build.number}`;
+  document.getElementById('crumb').textContent = `${app.name} - build #${build.number}`;
   clear(document.getElementById('topbar-actions')).append(
     el('button', { class: 'btn', text: 'Back to app', onclick: () => go('#/app/' + app.id) }),
   );
@@ -1485,12 +1485,12 @@ async function showBuild(appId, number) {
     }).catch(() => {
       if (!polling) {
         status.className = 'pill err';
-        clear(status).append(el('i', { class: 'dot' }), 'Lost connection — the build carries on');
+        clear(status).append(el('i', { class: 'dot' }), 'Lost connection - the build carries on');
       }
     });
 
     // Streaming has more places to go wrong than the rest of this put
-    // together — a proxy that buffers, a browser that waits for a full buffer
+    // together - a proxy that buffers, a browser that waits for a full buffer
     // before releasing the first byte. Rather than depend on all of them
     // behaving, fall back to asking for the log outright. Slower, but it
     // cannot silently show an empty console while a build is running.
@@ -1592,7 +1592,7 @@ function describe(kind, name = '') {
   if (kind === 'apk') {
     // Split builds produce one APK per architecture, and picking the wrong one
     // fails to install with a message that explains nothing.
-    if (name.includes('arm64-v8a')) return 'most phones — start here';
+    if (name.includes('arm64-v8a')) return 'most phones - start here';
     if (name.includes('armeabi-v7a')) return 'older 32-bit phones';
     if (name.includes('x86_64')) return 'emulators';
     return 'sideload & testing';
@@ -1675,7 +1675,7 @@ async function showBilling() {
 
   if (data.mode === 'demo') {
     content.append(el('div', { class: 'banner warn' }, [
-      el('b', { text: 'Demo mode — no money moves' }),
+      el('b', { text: 'Demo mode - no money moves' }),
       'There is no Collecto account configured, so payments run against a ' +
       'simulator that answers like the real one: it can approve, decline, stall, ' +
       'drop a connection or return rubbish. Set CISSY_COLLECTO_USERNAME and ' +
@@ -1725,7 +1725,7 @@ function subscriptionCard(user) {
   if (user.plan === 'trial') {
     return el('div', { class: 'banner info' }, [
       el('b', { text: 'Free trial' }),
-      `${left}. Pick a plan below when you need more — you pay from your phone ` +
+      `${left}. Pick a plan below when you need more - you pay from your phone ` +
       'and the plan comes on as soon as the payment lands.',
     ]);
   }
@@ -1736,7 +1736,7 @@ function subscriptionCard(user) {
     ]);
   }
   return el('div', { class: 'banner ok' }, [
-    el('b', { text: `${user.plan} — active` }),
+    el('b', { text: `${user.plan} - active` }),
     `${left}` + (user.plan_until ? `, renews by ${shortDate(user.plan_until)}.` : '.'),
   ]);
 }
@@ -1771,7 +1771,7 @@ function payDialog(plan, mode) {
   };
 
   const close = openModal(
-    `${plan.name} — ${money(plan.amount)}`,
+    `${plan.name} - ${money(plan.amount)}`,
     'You will get a prompt on your phone. Your PIN is entered there, never here.',
     [
       field('Mobile money number', phone, 'The number that will be charged.'),
@@ -1825,7 +1825,7 @@ async function showPayment(reference) {
             el('h3', { class: 'paycard-h', text: 'Details' }),
             kv('Status', payment.status),
             kv('Checks made', String(payment.checks ?? 0)),
-            kv('Gateway id', payment.transaction_id || '—'),
+            kv('Gateway id', payment.transaction_id || '-'),
             kv('Mode', payment.mode),
             payment.status === 'pending' && Number.isFinite(payment.expires_in)
               ? kv('Gives up in', Math.max(0, payment.expires_in) + 's')
@@ -1883,7 +1883,7 @@ function statusBanner(payment) {
   return el('div', { class: 'banner info' }, [
     el('b', { text: 'Check your phone' }),
     `A prompt was sent to ${payment.phone || 'your phone'}. Enter your PIN there to approve ` +
-    `${money(payment.amount)}. Safe to close this page — the server keeps checking.`,
+    `${money(payment.amount)}. Safe to close this page - the server keeps checking.`,
   ]);
 }
 
@@ -1956,7 +1956,7 @@ async function showAdmin() {
     el('tbody', {}, data.users.map((user) => el('tr', {}, [
       el('td', {}, [
         el('div', { class: 'app-name', text: user.name }),
-        el('div', { class: 'app-url mono', text: (user.phone || '—')
+        el('div', { class: 'app-url mono', text: (user.phone || '-')
           + (user.apps && user.apps.length ? ' · ' + user.apps.join(', ') : ' · no apps') }),
       ]),
       el('td', {}, [user.is_admin
@@ -2052,11 +2052,11 @@ function hostOf(url) {
 
 function shortDate(value) {
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString();
+  return Number.isNaN(date.getTime()) ? '-' : date.toLocaleString();
 }
 
 function seconds(value) {
-  return Number.isFinite(value) ? `${Math.round(value)}s` : '—';
+  return Number.isFinite(value) ? `${Math.round(value)}s` : '-';
 }
 
 function megabytes(bytes) {

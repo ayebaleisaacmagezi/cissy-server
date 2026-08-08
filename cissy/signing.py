@@ -63,7 +63,7 @@ def validate(credentials: SigningCredentials) -> None:
 
 
 def apply(project_dir: Path, credentials: SigningCredentials | None) -> None:
-    """Prepare the generated project to sign — or deliberately not to."""
+    """Prepare the generated project to sign - or deliberately not to."""
     key_properties = project_dir / "android" / "key.properties"
     gradle = project_dir / "android" / "app" / "build.gradle.kts"
 
@@ -124,7 +124,7 @@ def patch_gradle(contents: str) -> str:
     Gradle requires `plugins {}` to be the first *statement*, so the property
     loading has to sit between the two rather than at the top.
 
-    Written to tolerate template changes between Flutter versions — the debug
+    Written to tolerate template changes between Flutter versions - the debug
     line is replaced if present, otherwise the release build type is given a
     signing config directly. If neither shape is found it raises, because
     silently producing a debug-signed artifact that looks like a release one is

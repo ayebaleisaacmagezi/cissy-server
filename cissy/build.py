@@ -1,7 +1,7 @@
 """Running a build and reporting what happened.
 
 Builds take minutes, so they run on a background thread and their output is
-streamed. One at a time, enforced by a lock — a 4 GB box cannot run two Gradle
+streamed. One at a time, enforced by a lock - a 4 GB box cannot run two Gradle
 builds, and a queue is more machinery than a single-user server needs.
 
 The classifier at the bottom is the difference between a usable tool and a wall
@@ -255,7 +255,7 @@ class BuildRunner:
         ]
         if target == "apk":
             # A universal APK carries native code for every architecture, which
-            # is most of its size — around 40 MB where a single-architecture
+            # is most of its size - around 40 MB where a single-architecture
             # build is nearer 15 MB. Play never sees these anyway; the bundle
             # is what gets uploaded, and it splits by architecture on its own.
             args.append("--split-per-abi")
@@ -266,7 +266,7 @@ class BuildRunner:
 
         Deliberately not fatal. An app whose icon failed to generate is still a
         working app, and failing an otherwise good build over it would be worse
-        than shipping the default icon — but it is said loudly, because a
+        than shipping the default icon - but it is said loudly, because a
         silently ignored icon is exactly the complaint this was written to fix.
         """
         if not config.icon_file:
@@ -319,7 +319,7 @@ class BuildRunner:
             kind = "apk"
 
         # The output directory survives between builds, and a change of build
-        # flags changes the filenames — so a universal app-release.apk from an
+        # flags changes the filenames - so a universal app-release.apk from an
         # earlier build would sit alongside today's split ones and be offered as
         # if it were current. Anything older than this build is not ours.
         fresh = [p for p in found if p.stat().st_mtime >= build.started_at]
@@ -366,16 +366,16 @@ class BuildRunner:
                 kind="zip",
             )
         )
-        build.log(f"Saved {zip_path.name} ({_megabytes(zip_path)}) — open this on a Mac for iOS")
+        build.log(f"Saved {zip_path.name} ({_megabytes(zip_path)}) - open this on a Mac for iOS")
 
 
-# Nearly every phone in use is arm64, so it goes first — it is the one to send
+# Nearly every phone in use is arm64, so it goes first - it is the one to send
 # someone who just wants to install the app.
 _ABI_PRIORITY = ("arm64-v8a", "armeabi-v7a", "x86_64", "x86")
 
 
 def _artifact_stem(config: AppConfig, build: Build) -> str:
-    """`MyBusiness-1.0.0` — the name a person expects to see in Downloads,
+    """`MyBusiness-1.0.0` - the name a person expects to see in Downloads,
     rather than Flutter's app-release."""
     base = re.sub(r"[^A-Za-z0-9]+", "", config.app_name or config.name) or config.id
     return f"{base}-{build.version_name or config.version_name or '1.0.0'}"
@@ -406,13 +406,13 @@ def _megabytes(path: Path) -> str:
 _RULES: list[tuple[re.Pattern[str], str]] = [
     (
         re.compile(r"heap space|OutOfMemoryError|Expiring Daemon because JVM", re.I),
-        "Gradle ran out of memory. This server has limited RAM — lower "
+        "Gradle ran out of memory. This server has limited RAM - lower "
         "org.gradle.jvmargs in the generated android/gradle.properties, or add "
         "swap. Nothing on the server was changed.",
     ),
     (
         re.compile(r"No space left on device|ENOSPC", re.I),
-        "The disk is full. Old build artifacts are the usual cause — delete "
+        "The disk is full. Old build artifacts are the usual cause - delete "
         "some builds and try again.",
     ),
     (
@@ -445,12 +445,12 @@ _RULES: list[tuple[re.Pattern[str], str]] = [
         re.compile(r"A problem occurred evaluating project ':flutter_", re.I),
         "A Flutter plugin failed to configure itself for this Android Gradle "
         "Plugin version. The plugin and the line number are named just above "
-        "this in the log — it is a toolchain mismatch, not your configuration.",
+        "this in the log - it is a toolchain mismatch, not your configuration.",
     ),
     (
         re.compile(r"Could not resolve|Could not GET|Connection timed out", re.I),
         "A dependency could not be downloaded. This is usually the server's "
-        "network rather than anything in your configuration — try again.",
+        "network rather than anything in your configuration - try again.",
     ),
     (
         re.compile(r"Unsupported class file major version|invalid source release", re.I),

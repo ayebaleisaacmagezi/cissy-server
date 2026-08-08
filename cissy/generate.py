@@ -5,7 +5,7 @@ identity are overwritten from the config. The scaffold is kept between builds:
 recreating it costs minutes and it does not change unless the package id or
 project name does.
 
-Nothing here builds anything — that is `build.py`. Splitting them means the
+Nothing here builds anything - that is `build.py`. Splitting them means the
 generated project can be inspected, downloaded, or built by hand over SSH
 without running a build first.
 """
@@ -161,7 +161,7 @@ def _remove_default_test(directory: Path) -> None:
 
     `flutter create` writes a test that references `MyApp`, which this app does
     not have. Left in place it is a hard analyzer error, so the generated
-    project fails `flutter analyze` and `flutter test` on a clean checkout —
+    project fails `flutter analyze` and `flutter test` on a clean checkout -
     the first thing anyone opening it on a Mac would hit.
 
     Not replaced with a working test: pumping the widget tree would instantiate
@@ -182,7 +182,7 @@ def _remove_default_test(directory: Path) -> None:
 #
 # AGP 9 turned `getDefaultProguardFile('proguard-android.txt')` from a tolerated
 # call into a hard error. flutter_inappwebview_android 1.1.3 still makes that
-# call, its stable release is 22 months old, and the fix exists only in a beta —
+# call, its stable release is 22 months old, and the fix exists only in a beta -
 # so on any Flutter new enough to scaffold AGP 9, every build fails while
 # evaluating the plugin, before compiling a line of app code.
 #
@@ -202,7 +202,7 @@ def _pin_android_toolchain(directory: Path, on_log: LogSink) -> None:
     """Hold AGP at a version the WebView plugin can still be built against.
 
     Only steps in when the scaffold asks for AGP 9 or newer. A Flutter that
-    already scaffolds AGP 8 is left exactly as it is — the narrower the
+    already scaffolds AGP 8 is left exactly as it is - the narrower the
     intervention, the less there is to undo later.
     """
     settings = directory / "android" / "settings.gradle.kts"
@@ -229,7 +229,7 @@ def _pin_android_toolchain(directory: Path, on_log: LogSink) -> None:
         _AGP_LINE.sub(rf"\g<1>{PINNED_AGP}\g<3>", contents, count=1), encoding="utf-8"
     )
     on_log(
-        f"Pinned the Android Gradle Plugin from {current} to {PINNED_AGP} — "
+        f"Pinned the Android Gradle Plugin from {current} to {PINNED_AGP} - "
         f"the WebView plugin cannot be built with AGP 9."
     )
 
@@ -289,7 +289,7 @@ def _apply_launch_screen(
       of the icon.
 
     With no splash image everything is put back to the scaffold's stock
-    behaviour — the overrides are removed, not left half-applied, because the
+    behaviour - the overrides are removed, not left half-applied, because the
     scaffold survives between builds.
     """
     res = directory / "android" / "app" / "src" / "main" / "res"
@@ -329,7 +329,7 @@ def _apply_launch_screen(
         _write(res / variant / "launch_background.xml", background)
 
     # Both v31 qualifiers, because in dark mode `values-night` outranks
-    # `values-v31` — without the night-v31 file, dark-mode phones would show
+    # `values-v31` - without the night-v31 file, dark-mode phones would show
     # the icon flash this exists to remove.
     for variant, night in (("values-v31", False), ("values-night-v31", True)):
         path = res / variant / "styles.xml"
@@ -342,7 +342,7 @@ def _apply_launch_screen(
 def _copy_icon(config: AppConfig, store: ProjectStore, directory: Path) -> str | None:
     """Copy the launcher icon in, and return its pubspec path.
 
-    Only copied here — turning it into the dozens of sizes Android and iOS
+    Only copied here - turning it into the dozens of sizes Android and iOS
     actually read is left to flutter_launcher_icons at build time, because
     doing it here would mean an image library and this server has no
     dependencies to spend.

@@ -1,6 +1,6 @@
 """Tests for build bookkeeping and failure classification.
 
-No real builds here — those need Gradle and several minutes. What is tested is
+No real builds here - those need Gradle and several minutes. What is tested is
 everything around them: the one-at-a-time rule, the log fan-out, and the
 classifier that turns a wall of Gradle output into a sentence.
 """
@@ -241,7 +241,7 @@ class UsedVersionCodesTest(unittest.TestCase):
 
     def test_a_damaged_record_does_not_hide_the_others(self):
         # Losing one record to a truncated write must not make a used code look
-        # free — that is the one outcome Play punishes.
+        # free - that is the one outcome Play punishes.
         self.record(1, '{"version_code": 1}')
         self.record(2, "{ this is not json")
         self.record(3, '{"version_code": 3}')
@@ -314,7 +314,7 @@ class AbiOrderTest(unittest.TestCase):
 
 class ArtifactNameTest(unittest.TestCase):
     """Downloads are named after the app and its version, not after Flutter's
-    internal output files — `app-release.apk` tells the customer nothing."""
+    internal output files - `app-release.apk` tells the customer nothing."""
 
     def build(self, version="2.1.0"):
         return Build(

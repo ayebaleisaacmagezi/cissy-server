@@ -132,7 +132,7 @@ class LaunchScreenTest(unittest.TestCase):
     """The tap-to-app moment: splash straight away, no flash of the icon.
 
     The launch window must carry the splash image itself, and on Android 12+
-    the system splash must be handed a transparent icon — including in dark
+    the system splash must be handed a transparent icon - including in dark
     mode, where `values-night` would otherwise outrank `values-v31` and bring
     the icon back.
     """

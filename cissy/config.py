@@ -1,4 +1,4 @@
-"""The app manifest — the contract between the UI, the generator and the build.
+"""The app manifest - the contract between the UI, the generator and the build.
 
 Schema and validation rules are lifted from the desktop builder's
 `BuilderProject` so that a project means the same thing in both products.
@@ -110,7 +110,7 @@ class AppConfig:
     cache_enabled: bool = True
     offline_fallback_enabled: bool = True
     # The client's brand colour, seeded into the generated app's whole theme.
-    # Empty means the neutral grey default — never this product's own blue.
+    # Empty means the neutral grey default - never this product's own blue.
     theme_color: str = ""
     nav_style: str = "none"
     # Each tab: {"label": ..., "icon": <NAV_ICONS>, "target": url | /path | native:*}
@@ -119,7 +119,7 @@ class AppConfig:
     version_name: str = "1.0.0"
     version_code: int = 1
     # Filename only, relative to the app's assets directory. Never an absolute
-    # path — the server owns where things live.
+    # path - the server owns where things live.
     icon_file: str | None = None
     splash_file: str | None = None
     keystore_file: str | None = None
@@ -155,7 +155,7 @@ class AppConfig:
 
         Not simply `version_code + 1`. A newly created app has never built
         anything, so incrementing straight away would ship its first build as
-        version code 2 and quietly burn 1 — which reads as a bug to anyone
+        version code 2 and quietly burn 1 - which reads as a bug to anyone
         looking at their first artifact.
 
         It also leaves a hand-set code alone when nothing has used it, which is
@@ -164,7 +164,7 @@ class AppConfig:
         must be 47 rather than 48.
 
         Once a code has been built under, the next one has to clear every code
-        already used, not just the current one — Play rejects a reused code
+        already used, not just the current one - Play rejects a reused code
         even if the config has since been edited downwards.
         """
         if self.version_code not in used:
@@ -313,13 +313,13 @@ def validate(config: AppConfig) -> None:
     if not _PACKAGE_RE.match(config.android_package_id):
         raise ValidationError(
             "The Android package ID must be lower-case, dot-separated and have "
-            "at least two parts — for example com.example.app.",
+            "at least two parts - for example com.example.app.",
             detail=config.android_package_id,
         )
 
     if not _PACKAGE_RE.match(config.ios_bundle_id.lower()):
         raise ValidationError(
-            "The iOS bundle ID must be dot-separated with at least two parts — "
+            "The iOS bundle ID must be dot-separated with at least two parts - "
             "for example com.example.app.",
             detail=config.ios_bundle_id,
         )
@@ -398,7 +398,7 @@ def _validate_nav_tabs(config: AppConfig) -> None:
             )
     if web_tabs == 0:
         raise ValidationError(
-            "At least one navigation tab must open the website — otherwise "
+            "At least one navigation tab must open the website - otherwise "
             "the app has no web content at all."
         )
 

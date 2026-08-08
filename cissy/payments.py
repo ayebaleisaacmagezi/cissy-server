@@ -1,6 +1,6 @@
 """Subscription payments: the record on disk, and the loop that chases them.
 
-Because Collecto has no webhook, a payment is not an event that arrives — it is
+Because Collecto has no webhook, a payment is not an event that arrives - it is
 a question we keep asking until it answers. That makes the two hard parts of
 this file:
 
@@ -48,7 +48,7 @@ class Plan:
 # Amounts are shillings, and they have to be: Collecto charges an integer UGX
 # amount and has no currency field. Starter is "$5" as a decision, but the price
 # stored here is the pinned shilling figure rather than anything computed from a
-# rate — a live rate would move the price daily and charge two customers on the
+# rate - a live rate would move the price daily and charge two customers on the
 # same plan differently. Revisit these deliberately when the rate has drifted.
 PLANS: dict[str, Plan] = {
     "starter": Plan("starter", "Starter", 19_000, 25, "25 builds a month"),
@@ -59,7 +59,7 @@ PLANS: dict[str, Plan] = {
 # handset until they act, and in practice a prompt is either approved within
 # seconds or not at all. The cost of the short window: approve at minute three
 # and the payment is already abandoned while the money has moved. Rare, and
-# recoverable by hand — which is the better trade than holding every failed
+# recoverable by hand - which is the better trade than holding every failed
 # attempt open for five minutes.
 CHASE_SECONDS = 2 * 60
 
@@ -200,8 +200,8 @@ class PaymentStore:
 class Subscription:
     """What a paid-for month looks like while there are no accounts.
 
-    Deliberately thin. Its only job is to prove the loop closes — money moves,
-    something changes — and to be easy to move under a user id later.
+    Deliberately thin. Its only job is to prove the loop closes - money moves,
+    something changes - and to be easy to move under a user id later.
     """
 
     def __init__(self, path: Path) -> None:

@@ -1,7 +1,7 @@
 """Talking to Collecto, and pretending to when there is no account yet.
 
 Collecto is not shaped like Stripe. There is no hosted checkout page, no
-redirect, and — this is the one that changes the design — **no webhook**. Every
+redirect, and - this is the one that changes the design - **no webhook**. Every
 outcome is something we go and ask for:
 
     requestToPay        push a PIN prompt to the customer's handset
@@ -20,7 +20,7 @@ wrong:
 
 `DemoGateway` implements the same two calls in memory so the whole flow can be
 built and shown before an API key exists. It is deliberately not a stub that
-always succeeds — it can decline, stall, flake and return rubbish, because those
+always succeeds - it can decline, stall, flake and return rubbish, because those
 are the paths worth seeing before real money is involved.
 """
 
@@ -58,7 +58,7 @@ FAILED = "failed"
 class GatewayError(CissyError):
     """The gateway said no in a way that will not fix itself.
 
-    Only raised for the non-transient cases — a bad request body, a rejected
+    Only raised for the non-transient cases - a bad request body, a rejected
     key. Anything that might succeed on a later attempt comes back as a pending
     reply instead, because that is the answer that keeps polling alive.
     """
@@ -71,7 +71,7 @@ class Reply:
     """One answer from the gateway, already reduced to what we act on."""
 
     accepted: bool
-    """Whether the call itself worked — `data.requestToPay` and friends."""
+    """Whether the call itself worked - `data.requestToPay` and friends."""
 
     status: str
     """One of pending / successful / failed. Never anything else."""
@@ -90,7 +90,7 @@ class Settings:
     """Everything needed to reach a real Collecto account.
 
     `referer` is not decoration. Their WAF rejects any request without both a
-    Referer and a User-Agent, and urllib sends neither by default — a very dull
+    Referer and a User-Agent, and urllib sends neither by default - a very dull
     afternoon if you meet it without warning.
     """
 
@@ -128,7 +128,7 @@ class CollectoGateway:
     a read, so it retries freely. `requestToPay` moves money and pushes a prompt
     to somebody's phone: retrying it after a timeout risks two prompts and two
     debits for one subscription, so it retries only when the connection was
-    refused outright — which proves the request never arrived.
+    refused outright - which proves the request never arrived.
     """
 
     def __init__(self, settings: Settings) -> None:
@@ -164,7 +164,7 @@ class CollectoGateway:
 
     def request_to_pay_status(self, *, reference: str) -> Reply:
         # Their field is called transactionId, but the reference is what goes in
-        # it — the docs are explicit that it is "the reference you passed to
+        # it - the docs are explicit that it is "the reference you passed to
         # requestToPay", not the PMT… id that came back.
         return self._post(
             "requestToPayStatus",
@@ -242,7 +242,7 @@ class CollectoGateway:
             headers={
                 "Content-Type": "application/json",
                 "x-api-key": settings.api_key,
-                # Both required on every call — their gateway drops requests
+                # Both required on every call - their gateway drops requests
                 # missing either one before any handler sees them.
                 "Referer": settings.referer,
                 "User-Agent": settings.user_agent,
@@ -305,7 +305,7 @@ def _backoff(attempt: int) -> float:
 
 
 class _Transient(Exception):
-    """Might have been processed — do not repeat anything that moves money."""
+    """Might have been processed - do not repeat anything that moves money."""
 
 
 class _Unreached(Exception):
@@ -325,7 +325,7 @@ class _Rejected(Exception):
 class DemoGateway:
     """A Collecto that lives in this process, for building against with no key.
 
-    It answers the same two calls with the same shapes and — more usefully — the
+    It answers the same two calls with the same shapes and - more usefully - the
     same bad behaviour: a prompt nobody answers, a decline, a connection that
     drops, a body that is not JSON. Building only against the happy path is how
     you discover on launch day that an unanswered prompt locks an account
