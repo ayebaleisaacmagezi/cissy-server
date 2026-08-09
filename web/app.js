@@ -1405,13 +1405,16 @@ function studioPage(app, draft, markDirty) {
     // changed - touching the iframe means reloading the site.
     const site = (draft.website_url || '').trim();
     if (/^https?:\/\//i.test(site)) {
-      const current = pmSlot.firstChild;
-      if (!(current && current.classList.contains('pm-site')
-          && current.getAttribute('data-site') === site)) {
-        clear(pmSlot).append(el('iframe', {
-          class: 'pm-site', src: site, 'data-site': site,
-          sandbox: 'allow-scripts allow-same-origin allow-forms',
-        }));
+      const current = pmSlot.querySelector('.pm-site');
+      if (!(current && current.getAttribute('data-site') === site)) {
+        // Rendered at a real phone's viewport width and scaled down to the
+        // mock - laid out at the mock's actual width, sites look zoomed in.
+        clear(pmSlot).append(el('div', { class: 'pm-scale' }, [
+          el('iframe', {
+            class: 'pm-site', src: site, 'data-site': site,
+            sandbox: 'allow-scripts allow-same-origin allow-forms',
+          }),
+        ]));
       }
     } else {
       clear(pmSlot).append(el('div', { class: 'pm-body' }, [
