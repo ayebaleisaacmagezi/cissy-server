@@ -364,3 +364,13 @@ class ArtifactTokenTest(unittest.TestCase):
         self.assertGreaterEqual(len(one.token), 12)
         self.assertNotEqual(one.token, two.token)
         self.assertEqual(one.to_json()["token"], one.token)
+
+class TargetPlatformTest(BuildArgsTest):
+    def test_apk_builds_only_target_real_phones(self):
+        # x86 is for emulators; the x86_64 APK next to the real ones only ever
+        # got installed by mistake.
+        self.assertIn("--target-platform=android-arm,android-arm64", self.args("apk"))
+
+    def test_bundles_carry_no_platform_filter(self):
+        # Play wants the full bundle and does its own splitting.
+        self.assertFalse(any(a.startswith("--target-platform") for a in self.args("aab")))

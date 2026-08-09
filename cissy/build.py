@@ -265,6 +265,10 @@ class BuildRunner:
             # build is nearer 15 MB. Play never sees these anyway; the bundle
             # is what gets uploaded, and it splits by architecture on its own.
             args.append("--split-per-abi")
+            # Only the two ABIs real handsets use: 64-bit and older 32-bit ARM.
+            # x86 exists for emulators, and offering that APK next to the real
+            # ones only ever led people to install the wrong file.
+            args.append("--target-platform=android-arm,android-arm64")
         return args
 
     def _generate_icons(self, build: Build, config: AppConfig, cwd: Path) -> None:
