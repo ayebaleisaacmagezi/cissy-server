@@ -109,6 +109,10 @@ class AppConfig:
     dom_storage_enabled: bool = True
     cache_enabled: bool = True
     offline_fallback_enabled: bool = True
+    # The developer's own offline screen, as a self-contained HTML document.
+    # Empty means the built-in Material screen. Baked into the app as an asset
+    # at generate time; a link to app://retry is the screen's Try-again button.
+    offline_custom_html: str = ""
     # The client's brand colour, seeded into the generated app's whole theme.
     # Empty means the neutral grey default - never this product's own blue.
     theme_color: str = ""
@@ -190,6 +194,7 @@ class AppConfig:
             "dom_storage_enabled": self.dom_storage_enabled,
             "cache_enabled": self.cache_enabled,
             "offline_fallback_enabled": self.offline_fallback_enabled,
+            "offline_custom_html": self.offline_custom_html,
             "theme_color": self.theme_color,
             "nav_style": self.nav_style,
             "nav_tabs": [dict(tab) for tab in self.nav_tabs],
@@ -229,6 +234,7 @@ class AppConfig:
             dom_storage_enabled=_flag(data, "dom_storage_enabled", True),
             cache_enabled=_flag(data, "cache_enabled", True),
             offline_fallback_enabled=_flag(data, "offline_fallback_enabled", True),
+            offline_custom_html=_text(data, "offline_custom_html"),
             theme_color=_text(data, "theme_color"),
             nav_style=_text(data, "nav_style") or "none",
             nav_tabs=_tab_list(data, "nav_tabs"),
@@ -288,6 +294,7 @@ def normalise(config: AppConfig) -> AppConfig:
         ios_bundle_id=config.ios_bundle_id.strip(),
         allowed_domains=tuple(domains),
         features=tuple(features),
+        offline_custom_html=config.offline_custom_html.strip(),
         theme_color=config.theme_color.strip().lower(),
         nav_style=style,
         nav_tabs=tuple(tabs),
@@ -338,6 +345,14 @@ def validate(config: AppConfig) -> None:
         raise ValidationError(
             "The theme colour must be a six-digit hex value like #b3561d.",
             detail=config.theme_color,
+        )
+
+    # The screen ships inside every APK, so a pasted photo-heavy page would
+    # quietly bloat the app. Inline SVG artwork fits comfortably under this.
+    if len(config.offline_custom_html) > 200_000:
+        raise ValidationError(
+            "The custom offline screen is too large - keep it under 200 KB. "
+            "Use inline SVG artwork rather than embedded photos."
         )
 
     if config.nav_style not in NAV_STYLES:

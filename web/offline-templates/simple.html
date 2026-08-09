@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>No connection</title>
+<!--
+  Simple no-internet screen, in the style of the big shopping apps:
+  icon in a circle, two lines of text, one full-width button.
+
+  · Self-contained  no external CSS, fonts or images.
+  · href="app://retry" is the link the app intercepts to reload the site.
+  · Change --accent to the app's brand colour.
+-->
+<style>
+  :root {
+    --accent: #f68b1e;         /* the client's brand colour */
+    --ink: #282828;
+    --ink-soft: #565656;
+    --bg: #f1f1f2;
+    --circle: #ffffff;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 24px;
+    text-align: center;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .content {
+    width: 100%;
+    max-width: 400px;
+    margin-top: 14vh;
+  }
+
+  .badge {
+    width: 168px; height: 168px;
+    border-radius: 50%;
+    background: var(--circle);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 34px;
+  }
+  .badge svg { width: 96px; height: 96px; }
+
+  h1 {
+    font-size: 21px;
+    font-weight: 700;
+    margin-bottom: 10px;
+  }
+
+  p {
+    font-size: 15.5px;
+    line-height: 1.5;
+    color: var(--ink-soft);
+    margin-bottom: 34px;
+  }
+
+  .retry {
+    display: block;
+    width: 100%;
+    padding: 16px;
+    border-radius: 8px;
+    background: var(--accent);
+    color: #ffffff;
+    font-size: 16px;
+    font-weight: 600;
+    text-decoration: none;
+    transition: filter .15s ease, transform .1s ease;
+  }
+  .retry:active { filter: brightness(.94); transform: scale(.99); }
+</style>
+</head>
+<body>
+  <div class="content">
+
+    <span class="badge" aria-hidden="true">
+      <!-- wifi-off: three arcs, a dot, and the slash -->
+      <svg viewBox="0 0 96 96" fill="none" stroke="var(--accent)"
+           stroke-width="9" stroke-linecap="round">
+        <path d="M14 38a52 52 0 0 1 43-14"/>
+        <path d="M27 52a34 34 0 0 1 23-10"/>
+        <path d="M40 65a17 17 0 0 1 13-5"/>
+        <circle cx="48" cy="76" r="5" fill="var(--accent)" stroke="none"/>
+        <path d="M75 24 30 78" stroke-width="10"/>
+        <path d="M60 34a52 52 0 0 1 22 12" opacity=".45"/>
+        <path d="M62 49a34 34 0 0 1 8 5" opacity=".45"/>
+      </svg>
+    </span>
+
+    <h1>No connection</h1>
+    <p>An internet error occurred, please try again.</p>
+
+    <a class="retry" href="app://retry">Try Again</a>
+  </div>
+</body>
+</html>

@@ -304,3 +304,58 @@ class LauncherIconTest(unittest.TestCase):
         self.assertIn("  assets:", pubspec)
         self.assertIn("    - assets/splash.png", pubspec)
         self.assertIn("image_path: assets/icon/icon.png", pubspec)
+
+class CustomOfflineScreenTest(unittest.TestCase):
+    """The developer's own HTML replaces the built-in error view.
+
+    The contract with that HTML: app://retry retries, app://home goes to the
+    start page, and the theme colour arrives as the --accent CSS variable.
+    """
+
+    def test_the_custom_view_replaces_the_built_in_one(self):
+        source = template.main_dart(make(), offline_asset="assets/offline.html")
+        self.assertIn("_CustomErrorView", source)
+        self.assertNotIn("class _ErrorView", source)
+        self.assertIn('"assets/offline.html"', source)
+
+    def test_the_links_are_the_controls(self):
+        source = template.main_dart(make(), offline_asset="assets/offline.html")
+        self.assertIn("uri.scheme == 'app'", source)
+        self.assertIn("'retry'", source)
+        self.assertIn("'home'", source)
+
+    def test_without_custom_html_the_built_in_screen_remains(self):
+        source = template.main_dart(make())
+        self.assertIn("class _ErrorView", source)
+        self.assertNotIn("_CustomErrorView", source)
+
+    def test_the_theme_colour_is_injected_as_accent(self):
+        source = template.main_dart(
+            make(theme_color="#b3561d"), offline_asset="assets/offline.html"
+        )
+        self.assertIn("--accent", source)
+        self.assertIn("#b3561d", source)
+
+    def test_no_theme_colour_means_no_injection(self):
+        source = template.main_dart(make(), offline_asset="assets/offline.html")
+        self.assertNotIn("--accent", source)
+
+    def test_fallback_off_beats_the_asset(self):
+        # The generator never passes an asset while the module is off, but the
+        # template must not depend on it remembering that.
+        source = template.main_dart(
+            make(offline_fallback_enabled=False), offline_asset="assets/offline.html"
+        )
+        self.assertNotIn("_CustomErrorView", source)
+
+    def test_pubspec_bundles_the_asset(self):
+        pubspec = template.pubspec(make(), None, None, "assets/offline.html")
+        self.assertIn("  assets:", pubspec)
+        self.assertIn("    - assets/offline.html", pubspec)
+
+    def test_pubspec_keeps_the_splash_alongside(self):
+        pubspec = template.pubspec(
+            make(), "assets/splash.png", None, "assets/offline.html"
+        )
+        self.assertIn("    - assets/splash.png", pubspec)
+        self.assertIn("    - assets/offline.html", pubspec)

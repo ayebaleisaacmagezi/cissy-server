@@ -48,9 +48,16 @@ def generate(
     on_log("Writing the app source...")
     splash_asset = _copy_assets(config, store, directory)
     icon_asset = _copy_icon(config, store, directory)
+    offline_asset = _write_offline_html(config, directory)
 
-    _write(directory / "pubspec.yaml", template.pubspec(config, splash_asset, icon_asset))
-    _write(directory / "lib" / "main.dart", template.main_dart(config, splash_asset))
+    _write(
+        directory / "pubspec.yaml",
+        template.pubspec(config, splash_asset, icon_asset, offline_asset),
+    )
+    _write(
+        directory / "lib" / "main.dart",
+        template.main_dart(config, splash_asset, offline_asset),
+    )
     _write(
         directory / "android" / "app" / "src" / "main" / "AndroidManifest.xml",
         template.android_manifest(config),
@@ -271,6 +278,25 @@ def _copy_assets(
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source, target)
     return f"assets/{config.splash_file}"
+
+
+OFFLINE_ASSET = "assets/offline.html"
+
+
+def _write_offline_html(config: AppConfig, directory: Path) -> str | None:
+    """Bake the developer's own offline screen in, and return its asset path.
+
+    The scaffold survives between builds, so switching the custom screen off
+    must remove the file it left behind - pubspec no longer lists it, but a
+    stale copy would make "did my change take?" needlessly confusing.
+    """
+    target = directory / OFFLINE_ASSET
+    if not (config.offline_fallback_enabled and config.offline_custom_html):
+        target.unlink(missing_ok=True)
+        return None
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(config.offline_custom_html, encoding="utf-8")
+    return OFFLINE_ASSET
 
 
 def _apply_launch_screen(

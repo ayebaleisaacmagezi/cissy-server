@@ -14,7 +14,13 @@ from pathlib import Path
 
 from cissy import template
 from cissy.config import AppConfig
-from cissy.generate import PINNED_AGP, PINNED_GRADLE, _apply_launch_screen, _pin_android_toolchain
+from cissy.generate import (
+    PINNED_AGP,
+    PINNED_GRADLE,
+    _apply_launch_screen,
+    _pin_android_toolchain,
+    _write_offline_html,
+)
 from cissy.store import ProjectStore
 
 AGP_9_SETTINGS = """\
@@ -224,3 +230,42 @@ class LaunchScreenTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class OfflineHtmlTest(unittest.TestCase):
+    """The pasted offline screen must land in - and leave - the scaffold."""
+
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp(prefix="cissy_offline_"))
+        self.config = AppConfig(
+            id="shop",
+            name="Shop",
+            website_url="https://shop.example.com",
+            android_package_id="com.example.shop",
+            ios_bundle_id="com.example.shop",
+            offline_custom_html="<h1>Offline</h1>",
+        )
+
+    def tearDown(self):
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    @property
+    def asset(self) -> Path:
+        return self.root / "assets" / "offline.html"
+
+    def test_writes_the_asset(self):
+        self.assertEqual(_write_offline_html(self.config, self.root), "assets/offline.html")
+        self.assertEqual(self.asset.read_text(encoding="utf-8"), "<h1>Offline</h1>")
+
+    def test_removing_the_html_removes_the_stale_asset(self):
+        # The scaffold is reused between builds, so the file must not outlive
+        # the configuration that put it there.
+        _write_offline_html(self.config, self.root)
+        cleared = dataclasses.replace(self.config, offline_custom_html="")
+        self.assertIsNone(_write_offline_html(cleared, self.root))
+        self.assertFalse(self.asset.exists())
+
+    def test_switching_the_module_off_removes_it_too(self):
+        _write_offline_html(self.config, self.root)
+        off = dataclasses.replace(self.config, offline_fallback_enabled=False)
+        self.assertIsNone(_write_offline_html(off, self.root))
+        self.assertFalse(self.asset.exists())

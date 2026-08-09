@@ -110,3 +110,26 @@ class SerialisationTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class CustomOfflineHtmlTest(unittest.TestCase):
+    """The developer's own offline screen travels inside the config."""
+
+    def test_round_trips_through_json(self):
+        config = make(offline_custom_html="<h1>Offline</h1>")
+        self.assertEqual(
+            AppConfig.from_json(config.to_json()).offline_custom_html,
+            "<h1>Offline</h1>",
+        )
+
+    def test_normalise_strips_the_edges(self):
+        config = normalise(make(offline_custom_html="  <h1>Hi</h1>\n"))
+        self.assertEqual(config.offline_custom_html, "<h1>Hi</h1>")
+
+    def test_accepts_a_reasonable_screen(self):
+        validate(make(offline_custom_html="<h1>Offline</h1>"))
+
+    def test_rejects_an_oversized_screen(self):
+        # It ships inside every APK the app builds.
+        with self.assertRaises(ValidationError) as caught:
+            validate(make(offline_custom_html="x" * 200_001))
+        self.assertIn("200", str(caught.exception))

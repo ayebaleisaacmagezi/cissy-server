@@ -1082,7 +1082,8 @@ function studioPage(app, draft, markDirty) {
       modTile('cloud_off', 'Offline screens', 'Branded screens when the connection fails',
         Boolean(draft.offline_fallback_enabled), () => {
           draft.offline_fallback_enabled = !draft.offline_fallback_enabled;
-          markDirty(); renderLibrary();
+          if (!draft.offline_fallback_enabled) stageMode = 'app';
+          markDirty(); renderLibrary(); renderOfflineCard(); renderPreview();
         }),
       ...STUDIO_MODULES.map(([glyph, name, blurb]) =>
         modTile(glyph, name, blurb, has(name), () => setFeature(name, !has(name)))),
@@ -1203,12 +1204,172 @@ function studioPage(app, draft, markDirty) {
     );
   }
 
+  /* the offline screen - the built-in one, or the developer's own HTML */
+
+  const offlineCard = el('section', { class: 'group' });
+  const stageTabs = el('div', { class: 'stagetabs' });
+  // What the phone in the middle is showing: the app, or the offline screen.
+  let stageMode = 'app';
+  let previewTimer = null;
+
+  // Starter templates served alongside the client. The canonical copies live
+  // in examples/ at the repo root; these are the ones the browser can reach.
+  const OFFLINE_TEMPLATES = [
+    ['Illustrated', '/offline-templates/illustrated.html'],
+    ['Simple', '/offline-templates/simple.html'],
+  ];
+
+  function renderOfflineCard() {
+    clear(offlineCard).append(
+      el('h3', { class: 'group-title', text: 'Offline screen' }));
+
+    if (!draft.offline_fallback_enabled) {
+      offlineCard.append(el('p', { class: 'hint',
+        text: 'Switched off. Turn on the Offline screens module in the library to design one.' }));
+      return;
+    }
+
+    const custom = Boolean((draft.offline_custom_html || '').trim());
+    const mode = el('select', { class: 'input' }, [
+      el('option', { value: 'builtin', text: 'Built-in - matches the theme colour',
+        selected: !custom }),
+      el('option', { value: 'custom', text: 'My own HTML', selected: custom }),
+    ]);
+
+    const editorBox = el('div', { style: custom ? '' : 'display:none' });
+    const editor = el('textarea', {
+      class: 'input mono htmlbox', rows: 12, spellcheck: false,
+      placeholder: '<!doctype html>\n<html>…',
+    });
+    editor.value = draft.offline_custom_html || '';
+    editor.addEventListener('input', () => {
+      draft.offline_custom_html = editor.value;
+      markDirty();
+      // Redrawing the iframe on every keystroke makes typing stutter.
+      clearTimeout(previewTimer);
+      previewTimer = setTimeout(renderPreview, 400);
+    });
+    editor.addEventListener('focus', () => {
+      if (stageMode !== 'offline') { stageMode = 'offline'; renderPreview(); }
+    });
+
+    const useTemplate = (name, url) => async () => {
+      if (editor.value.trim() &&
+          !confirm(`Replace what is in the editor with the ${name} template?`)) return;
+      try {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error();
+        editor.value = await response.text();
+        draft.offline_custom_html = editor.value;
+        stageMode = 'offline';
+        markDirty(); renderPreview();
+      } catch {
+        toast('Could not load the template.', true);
+      }
+    };
+
+    editorBox.append(
+      el('div', { class: 'tplrow' }, [
+        el('span', { class: 'hint', text: 'Start from:' }),
+        ...OFFLINE_TEMPLATES.map(([name, url]) =>
+          el('button', { class: 'btn sm', text: name, onclick: useTemplate(name, url) })),
+      ]),
+      editor,
+      el('p', { class: 'hint',
+        text: 'Must be a single self-contained file - it shows precisely when '
+          + 'there is no internet, so nothing can load from the web. A link to '
+          + 'app://retry becomes the Try-again button, app://home goes to the '
+          + 'start page, and your theme colour arrives as the --accent CSS '
+          + 'variable.' }),
+    );
+
+    mode.addEventListener('change', () => {
+      const wantsCustom = mode.value === 'custom';
+      if (!wantsCustom && editor.value.trim()) {
+        // The pasted HTML is the only copy; losing it to a mis-click would
+        // be brutal.
+        if (!confirm('Go back to the built-in screen and discard your HTML?')) {
+          mode.value = 'custom';
+          return;
+        }
+        draft.offline_custom_html = '';
+        editor.value = '';
+        markDirty();
+      }
+      editorBox.style.display = wantsCustom ? '' : 'none';
+      stageMode = 'offline';
+      renderPreview();
+    });
+
+    offlineCard.append(field('Design', mode), editorBox);
+  }
+
+  /* what the phone shows when it is showing the offline screen */
+
+  function offlineMock() {
+    const html = (draft.offline_custom_html || '').trim();
+    if (!html) {
+      // The built-in Material screen, as _ErrorView renders it in the app.
+      return el('div', { class: 'pm-offline' }, [
+        el('span', { class: 'material-symbols-outlined pm-off-icon', text: 'wifi_off' }),
+        el('b', { text: 'You appear to be offline' }),
+        el('span', { class: 'hint', text: 'Check your internet connection and try again.' }),
+        el('span', { class: 'pm-off-btn', style: `background:${accent()}` }, [
+          el('span', { class: 'material-symbols-outlined', text: 'replay' }),
+          'Try again',
+        ]),
+        el('span', { class: 'pm-off-link', style: `color:${accent()}`, text: 'Go to home page' }),
+      ]);
+    }
+    // Sandboxed: scripts may run so the page previews honestly, but app://
+    // links and anything else that navigates goes nowhere. The injected
+    // script mirrors what the built app does with the theme colour.
+    const inject = [
+      '<script>',
+      /^#[0-9a-f]{6}$/i.test(draft.theme_color || '')
+        ? `document.documentElement.style.setProperty('--accent', '${draft.theme_color}');`
+        : '',
+      'document.addEventListener("click", (e) => {',
+      '  const a = e.target.closest && e.target.closest("a[href]");',
+      '  if (a) e.preventDefault();',
+      '}, true);',
+      '<\/script>',
+    ].join('\n');
+    const frame = el('iframe', { class: 'pm-frame', sandbox: 'allow-scripts' });
+    frame.srcdoc = html + inject;
+    return frame;
+  }
+
   function renderPreview() {
     const tabs = draft.nav_style === 'bottom' ? draft.nav_tabs : [];
     const hasNav = tabs.length > 0;
     const actions = [];
     if (hasNav && has('Saved items')) actions.push('bookmark_add');
     if (hasNav && has('Native sharing')) actions.push('share');
+
+    // The switch above the phone, only once there is an offline screen to see.
+    clear(stageTabs);
+    if (draft.offline_fallback_enabled) {
+      stageTabs.append(...[['app', 'App'], ['offline', 'Offline screen']].map(([id, name]) =>
+        el('button', {
+          class: 'stagetab' + (stageMode === id ? ' on' : ''), text: name,
+          onclick: () => { stageMode = id; renderPreview(); },
+        })));
+    } else {
+      stageMode = 'app';
+    }
+
+    if (stageMode === 'offline') {
+      clear(preview).append(
+        el('div', { class: 'pm-status' }, [
+          el('span', { text: '9:41' }),
+          el('span', { class: 'pm-sicons' }, ['signal_cellular_alt', 'battery_full']
+            .map((glyph) => el('span', { class: 'material-symbols-outlined', text: glyph }))),
+        ]),
+        offlineMock(),
+      );
+      return;
+    }
 
     clear(preview).append(
       el('div', { class: 'pm-status' }, [
@@ -1252,6 +1413,7 @@ function studioPage(app, draft, markDirty) {
 
   renderLibrary();
   renderTabs();
+  renderOfflineCard();
   renderPreview();
 
   return el('div', { class: 'studio-full' }, [
@@ -1260,18 +1422,22 @@ function studioPage(app, draft, markDirty) {
       library,
     ]),
     el('div', { class: 'studio-stage' }, [
+      stageTabs,
       preview,
       el('p', { class: 'hint', style: 'text-align:center',
         text: 'Live preview - the built app uses real Material screens in this colour.' }),
     ]),
-    el('section', { class: 'group' }, [
-      el('h3', { class: 'group-title', text: 'Appearance' }),
-      field('Theme colour',
-        el('div', { class: 'colorrow' }, [color, hex]),
-        "The app's accent - buttons, highlights, the active tab. Use the website's brand colour."),
-      field('Navigation', styleSel,
-        'A bottom bar with a native top app bar. Needed for the Saved, Downloads and Settings screens.'),
-      tabsField,
+    el('div', { class: 'studio-side' }, [
+      el('section', { class: 'group' }, [
+        el('h3', { class: 'group-title', text: 'Appearance' }),
+        field('Theme colour',
+          el('div', { class: 'colorrow' }, [color, hex]),
+          "The app's accent - buttons, highlights, the active tab. Use the website's brand colour."),
+        field('Navigation', styleSel,
+          'A bottom bar with a native top app bar. Needed for the Saved, Downloads and Settings screens.'),
+        tabsField,
+      ]),
+      offlineCard,
     ]),
   ]);
 }
@@ -1301,6 +1467,7 @@ function featuresSection(draft, markDirty) {
 }
 
 function offlineSection(draft, markDirty) {
+  const custom = Boolean((draft.offline_custom_html || '').trim());
   return fieldset('offline', '', [
     checkbox('Cache pages for faster loading', draft.cache_enabled,
       (on) => { draft.cache_enabled = on; markDirty(); }),
@@ -1308,6 +1475,16 @@ function offlineSection(draft, markDirty) {
       draft.offline_fallback_enabled,
       (on) => { draft.offline_fallback_enabled = on; markDirty(); },
       'Replaces the browser error page with one that offers Try again and Go home.'),
+    el('div', { class: 'banner info' }, [
+      el('b', { text: custom ? 'Using your own offline screen' : 'Using the built-in screen' }),
+      custom
+        ? 'Your HTML shows whenever a page cannot load. Edit it in the Studio.'
+        : 'It follows your theme colour automatically. Prefer your own design? Paste your HTML in the Studio.',
+      el('button', {
+        class: 'btn sm', style: 'margin-top:10px', text: 'Open the Studio',
+        onclick: () => go(`#/app/${draft.id}/studio`),
+      }),
+    ]),
   ]);
 }
 

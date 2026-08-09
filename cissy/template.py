@@ -88,6 +88,7 @@ def pubspec(
     config: AppConfig,
     splash_asset: str | None = None,
     icon_asset: str | None = None,
+    offline_asset: str | None = None,
 ) -> str:
     features = set(config.features)
     lines = [
@@ -134,8 +135,9 @@ def pubspec(
         "flutter:",
         "  uses-material-design: true",
     ]
-    if splash_asset:
-        lines += ["  assets:", f"    - {splash_asset}"]
+    bundled = [asset for asset in (splash_asset, offline_asset) if asset]
+    if bundled:
+        lines += ["  assets:"] + [f"    - {asset}" for asset in bundled]
 
     if icon_asset:
         # Android reads the launcher icon from five mipmap densities and iOS
@@ -160,7 +162,11 @@ def pubspec(
 # ── main.dart ────────────────────────────────────────────────────────────
 
 
-def main_dart(config: AppConfig, splash_asset: str | None = None) -> str:
+def main_dart(
+    config: AppConfig,
+    splash_asset: str | None = None,
+    offline_asset: str | None = None,
+) -> str:
     features = set(config.features)
     has_share = "Native sharing" in features
     has_location = "Location" in features
@@ -172,6 +178,7 @@ def main_dart(config: AppConfig, splash_asset: str | None = None) -> str:
     has_saved = "Saved items" in features
     has_settings = "Settings screen" in features
     has_fallback = config.offline_fallback_enabled
+    has_custom_offline = has_fallback and bool(offline_asset)
     has_bridge = has_share or has_location
     has_nav = config.nav_style == "bottom" and len(config.nav_tabs) >= 2
     has_downloads_screen = has_nav and has_downloads and any(
@@ -326,11 +333,14 @@ def main_dart(config: AppConfig, splash_asset: str | None = None) -> str:
             has_nav=has_nav,
             has_saved=has_saved,
             has_share=has_share,
+            has_custom_offline=has_custom_offline,
         )
     )
     add(_dispose(has_fallback))
 
-    if has_fallback:
+    if has_custom_offline:
+        add(_custom_error_view(offline_asset, config.theme_color))
+    elif has_fallback:
         add(_ERROR_VIEW)
 
     if has_saved:
@@ -880,6 +890,7 @@ def _build_method(
     has_nav: bool = False,
     has_saved: bool = False,
     has_share: bool = False,
+    has_custom_offline: bool = False,
 ) -> str:
     splash = (
         "const SizedBox.expand()"
@@ -1070,7 +1081,13 @@ def _build_method(
     if has_downloads:
         add("                onDownloadStartRequest: (_, request) => _download(request),")
     add("              ),")
-    if has_fallback:
+    if has_custom_offline:
+        add("              if (errorTitle != null)")
+        add("                _CustomErrorView(")
+        add("                  onRetry: _retry,")
+        add("                  onHome: _goHome,")
+        add("                ),")
+    elif has_fallback:
         add("              if (errorTitle != null)")
         add("                _ErrorView(")
         add("                  title: errorTitle!,")
@@ -1204,6 +1221,72 @@ class _ErrorView extends StatelessWidget {
   }
 }
 """
+
+
+def _custom_error_view(offline_asset: str, theme_color: str) -> str:
+    """The developer's own offline screen instead of the built-in one.
+
+    The pasted HTML ships inside the APK as an asset and is shown in its own
+    WebView on top of the broken page. The contract with that HTML: a link to
+    app://retry is the Try-again button, app://home returns to the start page,
+    and the app's theme colour arrives as the --accent CSS variable.
+    """
+    accent = (
+        "      onLoadStop: (viewController, _) async {\n"
+        "        await viewController.evaluateJavascript(\n"
+        "          source: \"document.documentElement.style\"\n"
+        f"              \".setProperty('--accent', '{theme_color}');\",\n"
+        "        );\n"
+        "      },\n"
+        if theme_color
+        else ""
+    )
+    return (
+        "/// The developer's own offline screen, baked into the app as an asset.\n"
+        "/// Its links are the controls: app://retry retries, app://home goes to\n"
+        "/// the start page. Everything else stays trapped in the overlay - this\n"
+        "/// screen shows precisely when the network is gone.\n"
+        "class _CustomErrorView extends StatelessWidget {\n"
+        "  const _CustomErrorView({required this.onRetry, required this.onHome});\n"
+        "\n"
+        "  final VoidCallback onRetry;\n"
+        "  final VoidCallback onHome;\n"
+        "\n"
+        "  @override\n"
+        "  Widget build(BuildContext context) {\n"
+        "    return ColoredBox(\n"
+        "      color: Theme.of(context).colorScheme.surface,\n"
+        "      child: InAppWebView(\n"
+        f"        initialFile: {dart_string(offline_asset)},\n"
+        "        initialSettings: InAppWebViewSettings(\n"
+        "          useShouldOverrideUrlLoading: true,\n"
+        "          supportZoom: false,\n"
+        "        ),\n"
+        "        shouldOverrideUrlLoading: (_, action) async {\n"
+        "          final uri = action.request.url;\n"
+        "          if (uri == null) {\n"
+        "            return NavigationActionPolicy.CANCEL;\n"
+        "          }\n"
+        "          if (uri.scheme == 'app') {\n"
+        "            if (uri.host == 'retry') {\n"
+        "              onRetry();\n"
+        "            } else if (uri.host == 'home') {\n"
+        "              onHome();\n"
+        "            }\n"
+        "            return NavigationActionPolicy.CANCEL;\n"
+        "          }\n"
+        "          // Only the initial asset load itself may navigate.\n"
+        "          if (uri.scheme == 'file' || uri.scheme == 'about') {\n"
+        "            return NavigationActionPolicy.ALLOW;\n"
+        "          }\n"
+        "          return NavigationActionPolicy.CANCEL;\n"
+        "        },\n"
+        f"{accent}"
+        "      ),\n"
+        "    );\n"
+        "  }\n"
+        "}\n"
+    )
 
 
 # ── the navigation shell ─────────────────────────────────────────────────

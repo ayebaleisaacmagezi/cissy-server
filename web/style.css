@@ -730,6 +730,46 @@ body.signed-out .content { padding: 0; max-width: none; }
 }
 .pm-item.on { color: var(--ink); }
 
+/* the right column stacks Appearance on top of the offline screen editor */
+.studio-side { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+.studio-side .group { margin-bottom: 0; }
+
+/* the App / Offline screen switch above the phone */
+.stagetabs { display: flex; gap: 6px; justify-content: center; }
+.stagetabs:empty { display: none; }
+.stagetab {
+  border: 1px solid var(--hair-2); background: var(--surface); color: var(--ink-2);
+  font: inherit; font-size: 12px; font-weight: 600; padding: 5px 13px;
+  border-radius: 999px; cursor: pointer;
+}
+.stagetab.on { background: var(--console); border-color: var(--console); color: #fff; }
+
+/* the pasted-HTML editor and its template row */
+.htmlbox {
+  font-size: 12px; line-height: 1.5; min-height: 190px; resize: vertical;
+  white-space: pre; overflow-x: auto;
+}
+.tplrow { display: flex; gap: 6px; align-items: center; margin-bottom: 8px; }
+
+/* the offline screen inside the phone: the developer's page, edge to edge */
+.pm-frame { flex: 1; width: 100%; border: 0; display: block; background: #fff; }
+
+/* or the built-in Material screen, as _ErrorView lays it out */
+.pm-offline {
+  flex: 1; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 9px; padding: 0 22px; text-align: center;
+}
+.pm-offline > b { font-size: 13px; }
+.pm-offline .hint { margin: 0; }
+.pm-off-icon { font-size: 34px; color: var(--ink-3); }
+.pm-off-btn {
+  display: inline-flex; align-items: center; gap: 6px; color: #fff;
+  font-size: 11px; font-weight: 600; padding: 7px 16px; border-radius: 999px;
+  margin-top: 8px;
+}
+.pm-off-btn .material-symbols-outlined { font-size: 13px; }
+.pm-off-link { font-size: 11px; font-weight: 600; }
+
 @media (max-width: 1080px) {
   .studio-full { grid-template-columns: 1fr 1fr; }
   .studio-stage { grid-column: 1 / -1; grid-row: 1; position: static; padding: 14px 0; }
