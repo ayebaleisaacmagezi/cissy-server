@@ -853,6 +853,15 @@ function overviewSection(app, builds) {
   return fieldset('overview', 'Build history', children);
 }
 
+/* Opaque /d/<token> links wherever the build minted a token - hovering one
+ * reveals nothing about apps, builds or the API. The readable path form only
+ * remains for builds recorded before tokens existed. */
+function artifactHref(app, number, artifact) {
+  return artifact.token
+    ? `/d/${encodeURIComponent(artifact.token)}`
+    : `/api/apps/${app.id}/builds/${number}/artifacts/${encodeURIComponent(artifact.name)}`;
+}
+
 function buildRow(app, build) {
   const status = {
     succeeded: ['ok', build.signed ? 'Signed' : 'Debug key'],
@@ -884,7 +893,7 @@ function buildRow(app, build) {
     el('td', {}, (build.artifacts || []).map((artifact) =>
       el('a', {
         class: 'btn sm', style: 'margin:2px 4px 2px 0',
-        href: `/api/apps/${app.id}/builds/${build.number}/artifacts/${encodeURIComponent(artifact.name)}`,
+        href: artifactHref(app, build.number, artifact),
         text: `${artifact.kind.toUpperCase()} · ${megabytes(artifact.size)}`,
         download: artifact.name,
       }))),
@@ -1736,7 +1745,7 @@ function finishBuild(app, finished, status, result) {
       ]),
       el('div', { class: 'dl' }, (finished.artifacts || []).map((artifact) =>
         el('a', { class: 'card', download: artifact.name,
-          href: `/api/apps/${app.id}/builds/${finished.number}/artifacts/${encodeURIComponent(artifact.name)}`,
+          href: artifactHref(app, finished.number, artifact),
         }, [
           el('div', { class: 'ttl', text: artifact.name }),
           el('div', { class: 'meta', text: `${megabytes(artifact.size)} · ${describe(artifact.kind, artifact.name)}` }),

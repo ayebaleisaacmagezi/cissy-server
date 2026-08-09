@@ -494,3 +494,77 @@ class BillingLockedTest(BillingTest):
 
 if __name__ == "__main__":
     unittest.main()
+
+class TokenDownloadTest(ServerTestCase):
+    """/d/<token> - the opaque download link.
+
+    The URL carries nothing but a random token, so the only way it may resolve
+    is through the session's own workspace: your token works for you, and for
+    nobody else it exists at all.
+    """
+
+    def setUp(self):
+        super().setUp()
+        _, body = self.request("POST", "/api/apps", {
+            "name": "Shop",
+            "website_url": "https://shop.example.com",
+            "android_package_id": "com.example.shop",
+        })
+        self.app_id = body["app"]["id"]
+
+        _, session_body = self.request("GET", "/api/auth/session")
+        store = self.app.workspaces.for_user(session_body["user"]["id"])
+        directory = store.build_dir(self.app_id, 1)
+        directory.mkdir(parents=True)
+        (directory / "Shop-1.0.0.apk").write_bytes(b"apk-bytes")
+        (directory / "build.json").write_text(json.dumps({
+            "number": 1, "app_id": self.app_id, "status": "succeeded",
+            "artifacts": [
+                {"name": "Shop-1.0.0.apk", "kind": "apk", "size": 9,
+                 "token": "t0k3n-abc123"},
+            ],
+        }), encoding="utf-8")
+
+    def fetch(self, path, session=None):
+        req = urllib.request.Request(self.base + path)
+        cookie = self.session if session is None else session
+        if cookie:
+            req.add_header("Cookie", cookie)
+        try:
+            with urllib.request.urlopen(req, timeout=10) as response:
+                return response.status, response.read(), dict(response.headers)
+        except urllib.error.HTTPError as error:
+            return error.code, error.read(), dict(error.headers)
+
+    def test_the_owner_gets_the_file_with_its_real_name(self):
+        status, body, headers = self.fetch("/d/t0k3n-abc123")
+        self.assertEqual(status, 200)
+        self.assertEqual(body, b"apk-bytes")
+        # The pretty filename moved out of the URL and into this header.
+        self.assertIn("Shop-1.0.0.apk", headers.get("Content-Disposition", ""))
+
+    def test_the_build_list_carries_the_token_through(self):
+        _, body = self.request("GET", f"/api/apps/{self.app_id}/builds")
+        self.assertEqual(body["builds"][0]["artifacts"][0]["token"], "t0k3n-abc123")
+
+    def test_somebody_elses_session_finds_nothing(self):
+        other = self.sign_up("Okello James", "0700333444")
+        status, _, _ = self.fetch("/d/t0k3n-abc123", session=other)
+        self.assertEqual(status, 404)
+
+    def test_no_session_means_401_not_404(self):
+        # Signed out is "sign in", not "gone" - the link works again after login.
+        status, _, _ = self.fetch("/d/t0k3n-abc123", session="")
+        self.assertEqual(status, 401)
+
+    def test_an_unknown_token_is_a_404(self):
+        status, _, _ = self.fetch("/d/no-such-token")
+        self.assertEqual(status, 404)
+
+    def test_the_readable_route_still_works(self):
+        # Old builds and anything scripted against the API keep their links.
+        status, body, _ = self.fetch(
+            f"/api/apps/{self.app_id}/builds/1/artifacts/Shop-1.0.0.apk"
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(body, b"apk-bytes")

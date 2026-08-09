@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import re
+import secrets
 import shutil
 import threading
 import time
@@ -37,12 +38,17 @@ class Artifact:
     path: Path
     size: int
     kind: str
+    # The download URL the browser shows is /d/<token> - deliberately opaque,
+    # because the readable path form spells out app ids and build numbers.
+    # Random, not derived: there is nothing to reverse.
+    token: str = field(default_factory=lambda: secrets.token_urlsafe(9))
 
     def to_json(self) -> dict[str, object]:
         return {
             "name": self.name,
             "kind": self.kind,
             "size": self.size,
+            "token": self.token,
         }
 
 

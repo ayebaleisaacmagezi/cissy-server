@@ -10,7 +10,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from cissy.build import Build, BuildRunner, _abi_order, _artifact_name, classify
+from cissy.build import Artifact, Build, BuildRunner, _abi_order, _artifact_name, classify
 from cissy.config import AppConfig
 from cissy.errors import ConflictError
 from cissy.store import ProjectStore
@@ -354,3 +354,13 @@ class ArtifactNameTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class ArtifactTokenTest(unittest.TestCase):
+    """Every artifact mints its own opaque download token."""
+
+    def test_the_token_is_random_and_in_the_json(self):
+        one = Artifact(name="a.apk", path=Path("a.apk"), size=1, kind="apk")
+        two = Artifact(name="b.apk", path=Path("b.apk"), size=1, kind="apk")
+        self.assertGreaterEqual(len(one.token), 12)
+        self.assertNotEqual(one.token, two.token)
+        self.assertEqual(one.to_json()["token"], one.token)

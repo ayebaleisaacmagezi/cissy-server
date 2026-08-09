@@ -255,6 +255,7 @@ class Application:
             "/api/apps/<app_id>/builds/<number>/artifacts/<name>",
             self.download_artifact,
         )
+        add("GET", "/d/<token>", self.download_by_token)
         add("GET", "/api/billing", self.billing)
         add("POST", "/api/billing/pay", self.start_payment)
         add("GET", "/api/billing/payments/<reference>", self.get_payment)
@@ -713,6 +714,39 @@ class Application:
             raise NotFoundError(f"{name} is not available. It may have been cleaned up.")
         return FileResponse(path=path, filename=name)
 
+    def download_by_token(self, request: Request) -> FileResponse:
+        """An artifact by its opaque token - the URL the browser shows.
+
+        The readable path route above still works; this one exists so hovering
+        a download link reveals nothing about apps, builds or the API. Same
+        rule as everywhere: the search never leaves the session's own
+        workspace, so somebody else's token finds nothing here.
+        """
+        token = request.params["token"]
+        store = request.workspace
+        for config in store.list():
+            for number in store.build_numbers(config.id):
+                directory = store.build_dir(config.id, number)
+                try:
+                    record = json.loads(
+                        (directory / "build.json").read_text(encoding="utf-8")
+                    )
+                except (OSError, json.JSONDecodeError):
+                    continue
+                for artifact in record.get("artifacts", []):
+                    if not token or artifact.get("token") != token:
+                        continue
+                    # The name comes from our own record, but it still names a
+                    # file on disk - held to the same rule as the route above.
+                    path = (directory / str(artifact.get("name"))).resolve()
+                    try:
+                        path.relative_to(directory.resolve())
+                    except ValueError:
+                        continue
+                    if path.is_file():
+                        return FileResponse(path=path, filename=path.name)
+        raise NotFoundError("That download link does not point at anything of yours.")
+
     def _build_json(self, request: Request, number: int) -> dict[str, Any] | None:
         """Prefer the live build, fall back to what was written to disk.
 
@@ -890,7 +924,9 @@ class RequestHandler(BaseHTTPRequestHandler):
         path = parsed.path
 
         try:
-            if path.startswith("/api/"):
+            # /d/ is the opaque artifact download - an API route in all but
+            # name, kept short because the whole point is what the URL shows.
+            if path.startswith("/api/") or path.startswith("/d/"):
                 user = app.resolve_user(self.headers)
                 if user is None and path not in PUBLIC_ROUTES:
                     self._json(401, {"error": "Sign in to continue."})
