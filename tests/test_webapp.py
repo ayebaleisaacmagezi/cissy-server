@@ -356,6 +356,17 @@ class AuthTest(ServerTestCase):
 
 
 class BillingTest(ServerTestCase):
+    def setUp(self):
+        super().setUp()
+        self.make_admin()
+
+    def make_admin(self):
+        # The payment simulator is an admin's testing tool - a customer who
+        # tries to pay while there is no gateway is refused instead. These
+        # tests exercise the simulator, so they run as the admin.
+        _, body = self.request("GET", "/api/auth/session")
+        self.app.accounts.set_admin(body["user"]["id"])
+
     def pay(self, plan="starter", phone="0772000000", **extra):
         status, body = self.request(
             "POST", "/api/billing/pay", {"plan": plan, "phone": phone, **extra}
@@ -424,6 +435,19 @@ class BillingTest(ServerTestCase):
         status, _ = self.request("GET", "/api/billing")
         self.assertEqual(status, 200)
 
+    def test_a_customer_cannot_pay_through_the_simulator(self):
+        # With no gateway configured the simulator would hand out plans for
+        # free, so a customer is told payments are not on - in words that do
+        # not mention environment variables.
+        customer = self.sign_up("Amina Kirabo", "0700555666")
+        status, body = self.request(
+            "POST", "/api/billing/pay",
+            {"plan": "starter", "phone": "0772000000"}, session=customer,
+        )
+        self.assertEqual(status, 409)
+        self.assertNotIn("COLLECTO", body["error"])
+        self.assertIn("not switched on", body["error"])
+
 
 class IsolationTest(ServerTestCase):
     """One customer, one workspace, and no way to name somebody else's."""
@@ -467,6 +491,7 @@ class BillingLockedTest(BillingTest):
     def setUp(self):
         super().setUp()
         self.session = self.sign_up("David Okello", "0755999888")
+        self.make_admin()
 
     def test_billing_rejects_a_missing_password(self):
         req = urllib.request.Request(self.base + "/api/billing")

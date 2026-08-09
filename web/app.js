@@ -1894,13 +1894,16 @@ async function showBilling() {
 
   content.append(el('h2', { class: 'sec', text: 'Plan and payments' }));
 
-  if (data.mode === 'demo') {
+  // The simulator is an admin's testing tool. A customer just sees plans;
+  // what happens when they try to pay is handled in payDialog.
+  if (data.mode === 'demo' && data.user && data.user.is_admin) {
     content.append(el('div', { class: 'banner warn' }, [
-      el('b', { text: 'Demo mode - no money moves' }),
+      el('b', { text: 'Demo mode - no money moves (only admins see this)' }),
       'There is no Collecto account configured, so payments run against a ' +
       'simulator that answers like the real one: it can approve, decline, stall, ' +
       'drop a connection or return rubbish. Set CISSY_COLLECTO_USERNAME and ' +
-      'CISSY_COLLECTO_KEY to go live.',
+      'CISSY_COLLECTO_KEY to go live. Customers can browse the plans, but ' +
+      'trying to pay tells them payments are not switched on yet.',
     ]));
   }
 
@@ -1970,6 +1973,21 @@ function paymentPill(status) {
 }
 
 function payDialog(plan, mode) {
+  // No gateway and not an admin: say so kindly, before asking for a number.
+  // The server enforces the same rule, so this is honesty, not security.
+  if (mode === 'demo' && !(state.user && state.user.is_admin)) {
+    const close = openModal(
+      'Payments are not open yet',
+      '',
+      [el('p', { class: 'sub', text:
+        'Mobile money payments are not switched on for this server yet, so '
+        + `the ${plan.name} plan cannot be bought right now. Nothing was `
+        + 'charged. Contact support and we will activate a plan for you.' })],
+      [el('button', { class: 'btn primary', text: 'OK', onclick: () => close() })],
+    );
+    return;
+  }
+
   const phone = el('input', { class: 'input mono', placeholder: '07XX 000 000' });
   const scenario = el('select', { class: 'input' }, [
     el('option', { value: 'approve', text: 'They approve it' }),

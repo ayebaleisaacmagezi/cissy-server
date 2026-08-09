@@ -27,7 +27,7 @@ from .accounts import Accounts, AuthError, ForbiddenError, User
 from .build import BuildRunner
 from .collecto import CollectoGateway, DemoGateway, Settings as CollectoSettings
 from .config import AppConfig, slugify
-from .errors import CissyError, NotFoundError, ValidationError
+from .errors import CissyError, ConflictError, NotFoundError, ValidationError
 from .payments import PLANS, PaymentService, PaymentStore, Subscription
 from .signing import SigningCredentials
 from .sms import DemoSms, build_sender, verification_message
@@ -787,6 +787,16 @@ class Application:
 
     def start_payment(self, request: Request) -> dict[str, Any]:
         user = request.owner
+        # Without a payment gateway the simulator answers instead, which for a
+        # customer would mean plans switched on for free - and a banner about
+        # environment variables is not their problem. Admins keep the
+        # simulator; everyone else gets a sentence they can act on.
+        if isinstance(self.gateway, DemoGateway) and not user.is_admin:
+            raise ConflictError(
+                "Mobile money payments are not switched on for this server "
+                "yet. Nothing was charged - contact support to activate a "
+                "plan."
+            )
         data = request.json()
         payment = self.payments.start(
             plan_id=str(data.get("plan") or ""),
