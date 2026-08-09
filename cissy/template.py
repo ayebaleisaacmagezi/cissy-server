@@ -916,34 +916,35 @@ def _build_method(
     add("  @override")
     add("  Widget build(BuildContext context) {")
     if has_nav:
-        # The shell owns the back button; each tab is a plain Scaffold with the
-        # native top app bar the navigation module promises.
+        # The shell owns the back button; each tab is a plain Scaffold. The
+        # top app bar only exists when a module puts a button in it - with
+        # nothing to hold, it would just be a strip of chrome between the
+        # user and the website.
         add("    return Scaffold(")
         add("        backgroundColor: Theme.of(context).colorScheme.surface,")
-        add("        appBar: AppBar(")
-        add("          title: const Text(appTitle),")
         if has_saved or has_share:
+            add("        appBar: AppBar(")
+            add("          title: const Text(appTitle),")
             add("          actions: [")
-        if has_saved:
-            add("            IconButton(")
-            add("              tooltip: 'Save this page',")
-            add("              icon: const Icon(Icons.bookmark_add_outlined),")
-            add("              onPressed: _saveCurrentPage,")
-            add("            ),")
-        if has_share:
-            add("            IconButton(")
-            add("              tooltip: 'Share this page',")
-            add("              icon: const Icon(Icons.share_outlined),")
-            add("              onPressed: () async {")
-            add("                final url = (await controller?.getUrl())?.toString();")
-            add("                if (url != null) {")
-            add("                  await SharePlus.instance.share(ShareParams(text: url));")
-            add("                }")
-            add("              },")
-            add("            ),")
-        if has_saved or has_share:
+            if has_saved:
+                add("            IconButton(")
+                add("              tooltip: 'Save this page',")
+                add("              icon: const Icon(Icons.bookmark_add_outlined),")
+                add("              onPressed: _saveCurrentPage,")
+                add("            ),")
+            if has_share:
+                add("            IconButton(")
+                add("              tooltip: 'Share this page',")
+                add("              icon: const Icon(Icons.share_outlined),")
+                add("              onPressed: () async {")
+                add("                final url = (await controller?.getUrl())?.toString();")
+                add("                if (url != null) {")
+                add("                  await SharePlus.instance.share(ShareParams(text: url));")
+                add("                }")
+                add("              },")
+                add("            ),")
             add("          ],")
-        add("        ),")
+            add("        ),")
     else:
         add("    return PopScope(")
         add("      canPop: false,")

@@ -1393,13 +1393,17 @@ function studioPage(app, draft, markDirty) {
       return;
     }
 
-    pmTop.append(
-      el('div', { class: 'pm-appbar' }, [
-        el('span', { class: 'pm-title', text: draft.app_name || draft.name || 'App' }),
-        actions.length ? el('span', { class: 'pm-abx' }, actions.map((glyph) =>
-          el('span', { class: 'material-symbols-outlined', text: glyph }))) : null,
-      ]),
-    );
+    // Mirrors the built app: the top bar only exists when a module puts a
+    // button in it. Otherwise the website runs edge to edge.
+    if (actions.length) {
+      pmTop.append(
+        el('div', { class: 'pm-appbar' }, [
+          el('span', { class: 'pm-title', text: draft.app_name || draft.name || 'App' }),
+          el('span', { class: 'pm-abx' }, actions.map((glyph) =>
+            el('span', { class: 'material-symbols-outlined', text: glyph }))),
+        ]),
+      );
+    }
 
     // The real website inside the phone. Left alone when the URL has not
     // changed - touching the iframe means reloading the site.

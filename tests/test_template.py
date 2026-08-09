@@ -359,3 +359,28 @@ class CustomOfflineScreenTest(unittest.TestCase):
         )
         self.assertIn("    - assets/splash.png", pubspec)
         self.assertIn("    - assets/offline.html", pubspec)
+
+class TopBarTest(unittest.TestCase):
+    """The shell's top app bar earns its place or does not exist.
+
+    With nothing to hold it would just be a strip of chrome between the user
+    and their website, so it only appears when Saved items or Native sharing
+    puts a button in it.
+    """
+
+    NAV = dict(
+        nav_style="bottom",
+        nav_tabs=(
+            {"label": "Home", "icon": "home", "target": "/"},
+            {"label": "Shop", "icon": "storefront", "target": "/shop"},
+        ),
+    )
+
+    def test_plain_navigation_has_no_top_bar(self):
+        source = template.main_dart(make(**self.NAV))
+        self.assertNotIn("Text(appTitle)", source)
+
+    def test_a_module_button_brings_the_bar_with_it(self):
+        source = template.main_dart(make(features=("Native sharing",), **self.NAV))
+        self.assertIn("Text(appTitle)", source)
+        self.assertIn("Icons.share_outlined", source)
