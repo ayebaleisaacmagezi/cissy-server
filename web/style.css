@@ -628,7 +628,11 @@ body.signed-out .content { padding: 0; max-width: none; }
 .studio-full .group { margin-bottom: 0; }
 .studio-stage {
   display: flex; flex-direction: column; align-items: center; gap: 8px;
-  padding: 26px 10px;
+  /* Centred in the viewport, not hugging the top: the stage is as tall as
+   * the visible area under the topbar and centres the phone inside it. */
+  justify-content: center;
+  min-height: calc(100vh - 120px);
+  padding: 14px 10px;
   background:
     radial-gradient(circle at 50% 42%, rgba(1, 166, 255, 0.07), transparent 70%);
   position: sticky; top: 78px;
@@ -751,6 +755,15 @@ body.signed-out .content { padding: 0; max-width: none; }
 }
 .tplrow { display: flex; gap: 6px; align-items: center; margin-bottom: 8px; }
 
+/* the body of the phone - whatever screen is being previewed fills it */
+.pm-slot {
+  flex: 1; min-height: 0; display: flex; flex-direction: column;
+  overflow: hidden;
+}
+
+/* the real website, live inside the phone */
+.pm-site { flex: 1; width: 100%; border: 0; display: block; background: #fff; }
+
 /* the offline screen inside the phone: the developer's page, edge to edge */
 .pm-frame { flex: 1; width: 100%; border: 0; display: block; background: #fff; }
 
@@ -772,7 +785,12 @@ body.signed-out .content { padding: 0; max-width: none; }
 
 @media (max-width: 1080px) {
   .studio-full { grid-template-columns: 1fr 1fr; }
-  .studio-stage { grid-column: 1 / -1; grid-row: 1; position: static; padding: 14px 0; }
+  .studio-stage {
+    grid-column: 1 / -1; grid-row: 1; position: static; padding: 14px 0;
+    /* Stacked above the panels here, so a viewport-tall stage would just be
+     * a screen of empty space to scroll past. */
+    min-height: 0;
+  }
 }
 @media (max-width: 860px) {
   .studio-full { grid-template-columns: 1fr; }

@@ -1037,7 +1037,15 @@ function studioPage(app, draft, markDirty) {
   draft.features = [...(draft.features || [])];
 
   const library = el('div', { class: 'modlib' });
-  const preview = el('div', { class: 'phone-mock lg' });
+
+  /* The phone is a persistent shell: top chrome, a body slot, bottom nav.
+   * Persistent because the body can hold the live website in an iframe, and
+   * an iframe that gets detached and re-appended reloads - so re-renders
+   * must repaint around it, never through it. */
+  const pmTop = el('div');
+  const pmSlot = el('div', { class: 'pm-slot' });
+  const pmBottom = el('div');
+  const preview = el('div', { class: 'phone-mock lg' }, [pmTop, pmSlot, pmBottom]);
   const tabsBox = el('div');
   const tabsField = el('div', { class: 'field' });
 
@@ -1368,30 +1376,45 @@ function studioPage(app, draft, markDirty) {
       stageMode = 'app';
     }
 
+    const statusIcons = stageMode === 'offline'
+      ? ['signal_cellular_alt', 'battery_full']
+      : ['signal_cellular_alt', 'wifi', 'battery_full'];
+    clear(pmTop).append(
+      el('div', { class: 'pm-status' }, [
+        el('span', { text: '9:41' }),
+        el('span', { class: 'pm-sicons' }, statusIcons
+          .map((glyph) => el('span', { class: 'material-symbols-outlined', text: glyph }))),
+      ]),
+    );
+
     if (stageMode === 'offline') {
-      clear(preview).append(
-        el('div', { class: 'pm-status' }, [
-          el('span', { text: '9:41' }),
-          el('span', { class: 'pm-sicons' }, ['signal_cellular_alt', 'battery_full']
-            .map((glyph) => el('span', { class: 'material-symbols-outlined', text: glyph }))),
-        ]),
-        offlineMock(),
-      );
+      clear(pmBottom);
+      clear(pmSlot).append(offlineMock());
       return;
     }
 
-    clear(preview).append(
-      el('div', { class: 'pm-status' }, [
-        el('span', { text: '9:41' }),
-        el('span', { class: 'pm-sicons' }, ['signal_cellular_alt', 'wifi', 'battery_full']
-          .map((glyph) => el('span', { class: 'material-symbols-outlined', text: glyph }))),
-      ]),
+    pmTop.append(
       el('div', { class: 'pm-appbar' }, [
         el('span', { class: 'pm-title', text: draft.app_name || draft.name || 'App' }),
         actions.length ? el('span', { class: 'pm-abx' }, actions.map((glyph) =>
           el('span', { class: 'material-symbols-outlined', text: glyph }))) : null,
       ]),
-      el('div', { class: 'pm-body' }, [
+    );
+
+    // The real website inside the phone. Left alone when the URL has not
+    // changed - touching the iframe means reloading the site.
+    const site = (draft.website_url || '').trim();
+    if (/^https?:\/\//i.test(site)) {
+      const current = pmSlot.firstChild;
+      if (!(current && current.classList.contains('pm-site')
+          && current.getAttribute('data-site') === site)) {
+        clear(pmSlot).append(el('iframe', {
+          class: 'pm-site', src: site, 'data-site': site,
+          sandbox: 'allow-scripts allow-same-origin allow-forms',
+        }));
+      }
+    } else {
+      clear(pmSlot).append(el('div', { class: 'pm-body' }, [
         el('div', { class: 'pm-hero', style: `background:${tint()}` }, [
           el('span', { class: 'pm-hero-dot', style: `background:${accent()}` }),
         ]),
@@ -1408,16 +1431,20 @@ function studioPage(app, draft, markDirty) {
           ]),
         ]),
         el('div', { class: 'pm-chip', style: `background:${accent()}` }),
-      ]),
-      hasNav ? el('div', { class: 'pm-nav' }, tabs.map((tab, i) =>
+      ]));
+    }
+
+    clear(pmBottom);
+    if (hasNav) {
+      pmBottom.append(el('div', { class: 'pm-nav' }, tabs.map((tab, i) =>
         el('span', { class: 'pm-item' + (i === 0 ? ' on' : '') }, [
           el('span', {
             class: 'material-symbols-outlined', text: tab.icon || 'public',
             style: i === 0 ? `color:${accent()};background:${tint()}` : '',
           }),
           el('span', { text: tab.label || '·' }),
-        ]))) : null,
-    );
+        ]))));
+    }
   }
 
   renderLibrary();
@@ -1434,7 +1461,8 @@ function studioPage(app, draft, markDirty) {
       stageTabs,
       preview,
       el('p', { class: 'hint', style: 'text-align:center',
-        text: 'Live preview - the built app uses real Material screens in this colour.' }),
+        text: 'Live preview with your real website. If it stays blank, the site '
+          + 'refuses to be embedded in other pages - the built app is unaffected.' }),
     ]),
     el('div', { class: 'studio-side' }, [
       el('section', { class: 'group' }, [
