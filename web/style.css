@@ -450,6 +450,36 @@ aside.summary h4 {
 .drop.filled { border-style: solid; border-color: var(--hair); background: var(--surface); }
 .drop b { display: block; color: var(--ink); font-size: 13.5px; margin-bottom: 3px; word-break: break-all; }
 .drop .btn { margin: 10px 4px 0; }
+.drop-thumb {
+  display: block; margin: 0 auto 10px;
+  max-width: 104px; max-height: 104px;
+  border-radius: 14px; object-fit: contain;
+  border: 1px solid var(--hair); background: #fff; padding: 4px;
+}
+
+/* the upload progress bar - the drop box becomes this while bytes travel */
+.upbar {
+  height: 6px; border-radius: 999px; background: var(--elevated);
+  overflow: hidden; margin: 12px 0 8px;
+}
+.upbar i {
+  display: block; height: 100%; width: 0;
+  background: var(--accent); border-radius: 999px;
+  transition: width 140ms var(--ease);
+}
+/* No measurable total: a sliding sliver, so it reads as working rather
+ * than as a percentage that would be invented. */
+.upbar.unknown i {
+  width: 34%; animation: upbar-slide 1.1s var(--ease) infinite;
+}
+@keyframes upbar-slide {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(330%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .upbar i { transition: none; }
+  .upbar.unknown i { animation: none; width: 100%; opacity: 0.5; }
+}
 
 /* ── the build console - the machine itself ────────────────────────────── */
 

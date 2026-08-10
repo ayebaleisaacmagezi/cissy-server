@@ -593,3 +593,95 @@ class TokenDownloadTest(ServerTestCase):
         )
         self.assertEqual(status, 200)
         self.assertEqual(body, b"apk-bytes")
+
+class FilePreviewTest(ServerTestCase):
+    """GET on an upload slot - the thumbnail the Branding page shows."""
+
+    def setUp(self):
+        super().setUp()
+        _, body = self.request("POST", "/api/apps", {
+            "name": "Shop",
+            "website_url": "https://shop.example.com",
+            "android_package_id": "com.example.shop",
+        })
+        self.app_id = body["app"]["id"]
+
+    def put_file(self, slot, name, payload):
+        req = urllib.request.Request(
+            f"{self.base}/api/apps/{self.app_id}/files/{slot}",
+            data=payload, method="PUT",
+        )
+        req.add_header("Cookie", self.session)
+        req.add_header("X-Filename", name)
+        with urllib.request.urlopen(req, timeout=10) as response:
+            return response.status
+
+    def get_raw(self, path, session=None):
+        req = urllib.request.Request(self.base + path)
+        cookie = self.session if session is None else session
+        if cookie:
+            req.add_header("Cookie", cookie)
+        try:
+            with urllib.request.urlopen(req, timeout=10) as response:
+                return response.status, response.read(), dict(response.headers)
+        except urllib.error.HTTPError as error:
+            return error.code, error.read(), dict(error.headers)
+
+    def test_an_uploaded_icon_comes_back_inline_as_an_image(self):
+        self.put_file("icon", "logo.png", b"png-bytes")
+        status, body, headers = self.get_raw(f"/api/apps/{self.app_id}/files/icon")
+        self.assertEqual(status, 200)
+        self.assertEqual(body, b"png-bytes")
+        self.assertEqual(headers.get("Content-Type"), "image/png")
+        self.assertIn("inline", headers.get("Content-Disposition", ""))
+
+    def test_an_empty_slot_is_a_404_not_a_broken_image_page(self):
+        status, _, _ = self.get_raw(f"/api/apps/{self.app_id}/files/splash")
+        self.assertEqual(status, 404)
+
+    def test_the_keystore_has_no_preview(self):
+        # It is a secret; nothing in the UI needs to read it back.
+        self.put_file("keystore", "upload.jks", b"jks-bytes")
+        status, _, _ = self.get_raw(f"/api/apps/{self.app_id}/files/keystore")
+        self.assertEqual(status, 404)
+
+    def test_somebody_else_cannot_see_your_icon(self):
+        self.put_file("icon", "logo.png", b"png-bytes")
+        other = self.sign_up("Okello James", "0700333444")
+        status, _, _ = self.get_raw(
+            f"/api/apps/{self.app_id}/files/icon", session=other
+        )
+        self.assertEqual(status, 404)
+
+    def test_downloads_are_still_attachments(self):
+        # The inline flag is for previews only - artifacts keep saving to disk.
+        _, session_body = self.request("GET", "/api/auth/session")
+        store = self.app.workspaces.for_user(session_body["user"]["id"])
+        directory = store.build_dir(self.app_id, 1)
+        directory.mkdir(parents=True)
+        (directory / "Shop-1.0.0.apk").write_bytes(b"apk")
+        (directory / "build.json").write_text(json.dumps({
+            "artifacts": [{"name": "Shop-1.0.0.apk", "kind": "apk", "size": 3,
+                           "token": "tok-xyz"}],
+        }), encoding="utf-8")
+        status, _, headers = self.get_raw("/d/tok-xyz")
+        self.assertEqual(status, 200)
+        self.assertIn("attachment", headers.get("Content-Disposition", ""))
+
+    def test_a_stale_save_cannot_unhook_an_uploaded_file(self):
+        # The editor's draft is a snapshot from before the upload. Saving it
+        # used to wipe the icon off the config, and the next build shipped
+        # Flutter's default icon.
+        self.put_file("icon", "logo.png", b"png-bytes")
+        self.request("PUT", f"/api/apps/{self.app_id}", {
+            "app_name": "Shop!", "icon_file": None, "splash_file": None,
+        })
+        _, body = self.request("GET", f"/api/apps/{self.app_id}")
+        self.assertEqual(body["app"]["app_name"], "Shop!")
+        self.assertEqual(body["app"]["icon_file"], "icon.png")
+
+    def test_removing_a_file_still_works_through_its_own_endpoint(self):
+        self.put_file("icon", "logo.png", b"png-bytes")
+        self.request("DELETE", f"/api/apps/{self.app_id}/files/icon")
+        _, body = self.request("GET", f"/api/apps/{self.app_id}")
+        self.assertIsNone(body["app"]["icon_file"])

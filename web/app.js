@@ -139,15 +139,39 @@ async function api(method, path, body) {
   return payload;
 }
 
-async function upload(appId, slot, file) {
-  const response = await fetch(`/api/apps/${appId}/files/${slot}`, {
-    method: 'PUT',
-    headers: authHeaders({ 'X-Filename': file.name }),
-    body: file,
+/* XMLHttpRequest rather than fetch, which is the one thing fetch cannot do:
+ * report how far an upload has got. `onProgress` receives a fraction from 0
+ * to 1, or null when the browser cannot measure the total. */
+function upload(appId, slot, file, onProgress) {
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open('PUT', `/api/apps/${appId}/files/${slot}`);
+    for (const [key, value] of Object.entries(authHeaders({ 'X-Filename': file.name }))) {
+      request.setRequestHeader(key, value);
+    }
+
+    const read = () => {
+      try { return JSON.parse(request.responseText || '{}'); } catch { return {}; }
+    };
+
+    request.upload.addEventListener('progress', (event) => {
+      if (!onProgress) return;
+      onProgress(event.lengthComputable ? event.loaded / event.total : null);
+    });
+    // The bytes are gone but the server has not answered yet: hold the bar
+    // full rather than letting it sit at 99% through the slow part.
+    request.upload.addEventListener('load', () => onProgress && onProgress(1));
+    request.addEventListener('load', () => {
+      const payload = read();
+      if (request.status >= 200 && request.status < 300) resolve(payload.app);
+      else reject(new Error(payload.error || `Upload failed (${request.status})`));
+    });
+    request.addEventListener('error', () =>
+      reject(new Error('The upload did not reach the server. Check your connection.')));
+    request.addEventListener('abort', () => reject(new Error('Upload cancelled.')));
+
+    request.send(file);
   });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload.error || 'Upload failed');
-  return payload.app;
 }
 
 /* Reads a server-sent event stream over fetch rather than EventSource.
@@ -967,25 +991,75 @@ function uploadSlot(app, slot, label, hint, accept) {
   const input = el('input', { type: 'file', accept, style: 'display:none' });
   const box = el('div', { class: 'drop' + (current ? ' filled' : '') });
 
+  // A keystore is not a picture; the image slots show what was uploaded.
+  const thumb = current && slot !== 'keystore'
+    ? el('img', {
+        class: 'drop-thumb', alt: '',
+        src: `/api/apps/${app.id}/files/${slot}?t=`
+          + (Date.parse(app.updated_at) || 0),
+      })
+    : null;
+
   const render = () => {
-    clear(box).append(
+    // Native append(), so a bare `null` in the list would come out as the
+    // literal text "null" - el()'s null-skipping does not apply here.
+    clear(box).append(...[
+      thumb,
       el('b', { text: current ? current : label }),
       el('div', { class: 'hint', text: current ? 'Uploaded' : hint }),
       el('button', { class: 'btn sm', style: 'margin-top:10px',
         text: current ? 'Replace' : 'Choose file', onclick: () => input.click() }),
       current ? el('button', { class: 'btn sm ghost', style: 'margin-top:10px',
         text: 'Remove', onclick: () => removeFile(app.id, slot) }) : null,
-    );
+    ].filter(Boolean));
   };
 
   input.addEventListener('change', async () => {
     const file = input.files[0];
     if (!file) return;
+    // Cleared so that picking the same file again after a failure still
+    // counts as a change - otherwise a retry does nothing at all.
+    input.value = '';
+    // The box becomes the progress bar for the duration; route() repaints the
+    // whole page on success, render() restores this box on failure.
+    const fill = el('i');
+    const bar = el('div', { class: 'upbar' }, [fill]);
+    const amount = el('div', { class: 'hint', text: 'Starting…' });
+    clear(box).append(
+      el('b', { text: file.name }),
+      bar,
+      amount,
+    );
+    const show = (fraction) => {
+      if (fraction === null) {
+        // Some browsers cannot measure the total for a raw body: show motion
+        // rather than a number that would be a lie.
+        bar.classList.add('unknown');
+        amount.textContent = 'Uploading…';
+        return;
+      }
+      const percent = Math.round(fraction * 100);
+      fill.style.width = percent + '%';
+      amount.textContent = percent >= 100
+        ? 'Finishing up…'
+        : `${percent}% of ${megabytes(file.size)}`;
+    };
+    show(0);
+
     try {
-      await upload(app.id, slot, file);
+      const updated = await upload(app.id, slot, file, show);
+      // The draft outlives this page, and a stale file field in it would
+      // ride along on the next save. The server ignores these fields on
+      // save too - this keeps the copy the UI shows truthful.
+      if (updated && state.draft && state.draft.id === app.id) {
+        state.draft[slot + '_file'] = updated[slot + '_file'];
+      }
       toast(`${label} uploaded`);
       route();
-    } catch (error) { toast(error.message, true); }
+    } catch (error) {
+      toast(error.message, true);
+      render();
+    }
   });
 
   render();
@@ -995,6 +1069,10 @@ function uploadSlot(app, slot, label, hint, accept) {
 async function removeFile(appId, slot) {
   try {
     await api('DELETE', `/api/apps/${appId}/files/${slot}`);
+    if (state.draft && state.draft.id === appId) {
+      state.draft[slot + '_file'] = null;
+      if (slot === 'keystore') state.draft.key_alias = null;
+    }
     toast('Removed');
     route();
   } catch (error) { toast(error.message, true); }
@@ -1206,7 +1284,8 @@ function studioPage(app, draft, markDirty) {
     clear(tabsField);
     if (draft.nav_style !== 'bottom') return;
     clear(tabsBox).append(...draft.nav_tabs.map(tabRow));
-    tabsField.append(
+    // Native append() again - a bare null here would render as "null".
+    tabsField.append(...[
       el('label', { text: 'Tabs (2-5)' }),
       tabsBox,
       draft.nav_tabs.length < 5 ? el('button', {
@@ -1218,7 +1297,7 @@ function studioPage(app, draft, markDirty) {
       }) : null,
       el('p', { class: 'hint',
         text: 'Tabs can open a page of the website or a native screen. Native screens switch their module on automatically.' }),
-    );
+    ].filter(Boolean));
   }
 
   /* the offline screen - the built-in one, or the developer's own HTML */

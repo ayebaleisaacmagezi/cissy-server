@@ -117,10 +117,12 @@ class Cookie:
 
 @dataclass
 class FileResponse:
-    """Send a file back as a download."""
+    """Send a file back - as a download by default, inline for previews."""
 
     path: Path
     filename: str
+    media_type: str = "application/octet-stream"
+    inline: bool = False
 
 
 @dataclass
@@ -242,6 +244,7 @@ class Application:
         add("PUT", "/api/apps/<app_id>", self.update_app)
         add("DELETE", "/api/apps/<app_id>", self.delete_app)
         add("POST", "/api/apps/<app_id>/duplicate", self.duplicate_app)
+        add("GET", "/api/apps/<app_id>/files/<slot>", self.get_file)
         add("PUT", "/api/apps/<app_id>/files/<slot>", self.upload_file)
         add("DELETE", "/api/apps/<app_id>/files/<slot>", self.remove_file)
         add("POST", "/api/apps/<app_id>/generate", self.generate_only)
@@ -477,6 +480,13 @@ class Application:
         data.pop("id", None)
         data.pop("created_at", None)
         data.pop("updated_at", None)
+        # The uploaded files change only through their own endpoints. The
+        # editor's draft is a snapshot from page load, so accepting these here
+        # let a save made after an upload quietly unhook the icon - and the
+        # next build shipped Flutter's default one.
+        data.pop("icon_file", None)
+        data.pop("splash_file", None)
+        data.pop("keystore_file", None)
 
         merged = {**current.to_json(), **data, "id": app_id}
         return {"app": self._app_json(store.save(AppConfig.from_json(merged)), store)}
@@ -545,6 +555,34 @@ class Application:
 
         saved = store.save(config.updated(**{field: name}))
         return {"app": self._app_json(saved, store)}
+
+    def get_file(self, request: Request) -> FileResponse:
+        """The uploaded icon or splash, served inline for the preview.
+
+        Image slots only: a keystore is a secret, and nothing in the UI needs
+        to read one back.
+        """
+        app_id = request.params["app_id"]
+        slot = request.params["slot"]
+        if slot not in ("icon", "splash"):
+            raise NotFoundError(f'"{slot}" has no preview.')
+        _, field = self._SLOTS[slot]
+
+        store = request.workspace
+        config = store.get(app_id)
+        name = getattr(config, field)
+        if not name:
+            raise NotFoundError(f"No {slot} has been uploaded.")
+        path = store.assets_dir(app_id) / name
+        if not path.is_file():
+            raise NotFoundError(f"The {slot} file is missing on the server.")
+        kind, _ = mimetypes.guess_type(name)
+        return FileResponse(
+            path=path,
+            filename=name,
+            media_type=kind or "application/octet-stream",
+            inline=True,
+        )
 
     def remove_file(self, request: Request) -> dict[str, Any]:
         app_id = request.params["app_id"]
@@ -1063,10 +1101,11 @@ class RequestHandler(BaseHTTPRequestHandler):
     def _file(self, response: FileResponse) -> None:
         size = response.path.stat().st_size
         self.send_response(200)
-        self.send_header("Content-Type", "application/octet-stream")
+        self.send_header("Content-Type", response.media_type)
         self.send_header("Content-Length", str(size))
+        disposition = "inline" if response.inline else "attachment"
         self.send_header(
-            "Content-Disposition", f'attachment; filename="{response.filename}"'
+            "Content-Disposition", f'{disposition}; filename="{response.filename}"'
         )
         self.end_headers()
         # Streamed in chunks: an AAB can be tens of megabytes and reading it
