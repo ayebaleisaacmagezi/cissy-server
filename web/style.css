@@ -304,6 +304,42 @@ table.apps tr.row:hover td { background: #f4faff; cursor: pointer; }
 .input:disabled { background: var(--bg); color: var(--ink-3); }
 .input.mono { font-size: 13px; }
 
+/* The phone field. The country is shown rather than chosen: Collecto charges
+   Ugandan mobile money in shillings and nothing else, so a country picker
+   would offer two hundred choices of which one works, and the refusal would
+   land after the number and after the button. A prefix that cannot be changed
+   is the honest control, and it stays on screen while they type - which the
+   old placeholder did not. */
+.phone-wrap { display: flex; align-items: stretch; }
+.phone-wrap .prefix {
+  display: flex; align-items: center; gap: 6px; padding: 0 12px;
+  background: var(--bg); border: 1px solid var(--hair); border-right: none;
+  border-radius: var(--r) 0 0 var(--r); white-space: nowrap;
+  font-size: 14px; font-weight: 600; color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.phone-wrap .input { border-radius: 0 var(--r) var(--r) 0; }
+/* The focus ring has to sit over the prefix's shared edge, not under it. */
+.phone-wrap .input:focus { position: relative; z-index: 1; }
+
+/* Inter's tabular figures rather than the code face this field used to borrow.
+   A phone number is read back off a handset a digit at a time, so the digits
+   want equal widths and a little air, not the look of source. */
+.input.tel {
+  font-size: 15px; font-weight: 500; letter-spacing: 0.045em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The network, named back to them. Free - it is a prefix table, no lookup -
+   and it catches the transposed digit before a stranger's handset rings. */
+.net {
+  display: inline-flex; align-items: center; gap: 6px; margin-top: 8px;
+  padding: 3px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 600;
+  background: rgba(53, 201, 120, 0.1); border: 1px solid rgba(53, 201, 120, 0.35);
+  color: var(--ok-ink);
+}
+.net .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); animation: none; }
+
 select.input {
   appearance: none; -webkit-appearance: none;
   padding-right: 34px; cursor: pointer;

@@ -237,10 +237,22 @@ class StartingAPayment(ServiceCase):
     def test_a_local_number_gains_the_country_code(self):
         self.assertEqual(payments.normalise_phone("0772000000"), "256772000000")
 
+    def test_a_bare_subscriber_number_gains_the_country_code(self):
+        # What the phone field sends if the +256 is ever lost on the way. Nine
+        # digits passes the length check on its own, so without this rule it
+        # would reach Collecto as a wrong number rather than as an error.
+        self.assertEqual(payments.normalise_phone("772145903"), "256772145903")
+
+    def test_a_number_that_already_has_the_code_is_left_alone(self):
+        self.assertEqual(payments.normalise_phone("256772145903"), "256772145903")
+        self.assertEqual(payments.normalise_phone("+256 772 145 903"), "256772145903")
+
     def test_nonsense_is_refused_with_something_actionable(self):
         with self.assertRaises(ValidationError) as caught:
             payments.normalise_phone("call me")
-        self.assertIn("0772000000", str(caught.exception))
+        # An example, not just a complaint - and the same shape the field asks
+        # for, so the error and the control do not describe different things.
+        self.assertIn("772 000 000", str(caught.exception))
 
     def test_an_unknown_plan_is_refused(self):
         with self.assertRaises(ValidationError):

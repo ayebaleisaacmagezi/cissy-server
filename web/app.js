@@ -342,7 +342,7 @@ function authError(box, message) {
 
 async function showSignup() {
   const name = el('input', { class: 'input', placeholder: 'Your name', autocomplete: 'name' });
-  const phone = el('input', { class: 'input mono', placeholder: '07XX 000 000', inputmode: 'tel' });
+  const phone = phoneField();
   const pass = el('input', { class: 'input', type: 'password', placeholder: 'At least 8 characters', autocomplete: 'new-password' });
   const problem = el('div', {});
   const button = el('button', { class: 'btn primary full', text: 'Create account' });
@@ -352,7 +352,7 @@ async function showSignup() {
     clear(problem);
     try {
       const data = await api('POST', '/api/auth/signup', {
-        name: name.value, phone: phone.value, password: pass.value,
+        name: name.value, phone: phone.value(), password: pass.value,
       });
       state.pending = { phone: data.phone, code: data.code || '', demo: data.demo };
       go('#/verify');
@@ -362,7 +362,7 @@ async function showSignup() {
     }
   };
   button.addEventListener('click', submit);
-  for (const input of [name, phone, pass]) onEnter(input, submit);
+  for (const input of [name, phone.input, pass]) onEnter(input, submit);
 
   authScreen(
     'Create your account',
@@ -370,7 +370,7 @@ async function showSignup() {
     [
       problem,
       field('Your name', name),
-      field('Phone number', phone,
+      field('Phone number', phone.node,
         'We send a code to confirm it. This is also the number you will pay from.'),
       field('Password', pass),
       button,
@@ -446,7 +446,7 @@ async function showVerify() {
 }
 
 async function showLogin() {
-  const phone = el('input', { class: 'input mono', placeholder: '07XX 000 000', inputmode: 'tel' });
+  const phone = phoneField();
   const pass = el('input', { class: 'input', type: 'password', placeholder: 'Your password', autocomplete: 'current-password' });
   const problem = el('div', {});
   const button = el('button', { class: 'btn primary full', text: 'Log in' });
@@ -456,7 +456,7 @@ async function showLogin() {
     clear(problem);
     try {
       const data = await api('POST', '/api/auth/login', {
-        phone: phone.value, password: pass.value,
+        phone: phone.value(), password: pass.value,
       });
       state.user = data.user;
       go('#/');
@@ -466,12 +466,12 @@ async function showLogin() {
     }
   };
   button.addEventListener('click', submit);
-  for (const input of [phone, pass]) onEnter(input, submit);
+  for (const input of [phone.input, pass]) onEnter(input, submit);
 
   authScreen(
     'Welcome back',
     'Log in to your apps and builds.',
-    [problem, field('Phone number', phone), field('Password', pass), button],
+    [problem, field('Phone number', phone.node), field('Password', pass), button],
     ['New here? ', authLink('Create an account', '#/signup')],
   );
 }
@@ -693,6 +693,73 @@ function field(label, input, hint) {
     el('label', { text: label }), input,
     hint ? el('p', { class: 'hint', text: hint }) : null,
   ]);
+}
+
+/* ── the phone field ─────────────────────────────────────────────────────
+ *
+ * One control for the three places a number is asked for - signup, login and
+ * paying - because the number somebody verifies on is the number they pay
+ * from, and typing it two different ways is how those quietly drift apart.
+ *
+ * The country is shown, never chosen. Collecto charges Ugandan mobile money
+ * in shillings and has no currency field, so a picker would offer two hundred
+ * countries of which one works, and the refusal would arrive after the number
+ * and after the button. It also means `value()` is the single place the 256 is
+ * put on, so it cannot be left off.
+ */
+function phoneField(msisdn) {
+  const input = el('input', {
+    class: 'input tel', inputmode: 'tel', placeholder: '772 000 000',
+    autocomplete: 'tel-national', value: localDigits(msisdn),
+  });
+  const net = el('span', { class: 'net' });
+
+  const redraw = () => {
+    // Grouped in threes as they type. People proof-read a number they just
+    // typed by scanning it in groups, and 772145903 is the shape that hides a
+    // transposed digit. The leading 0 goes silently - typing it is habit, not
+    // a mistake worth an error message.
+    const atEnd = input.selectionStart === input.value.length;
+    const digits = input.value.replace(/\D/g, '').replace(/^0+/, '').slice(0, 9);
+    input.value = digits.replace(/(\d{3})(?=\d)/g, '$1 ').trim();
+    if (atEnd) input.selectionStart = input.selectionEnd = input.value.length;
+
+    const carrier = networkOf(digits);
+    net.style.display = carrier ? '' : 'none';
+    clear(net).append(el('span', { class: 'dot' }), carrier);
+  };
+  input.addEventListener('input', redraw);
+  redraw();
+
+  return {
+    input,
+    node: el('div', {}, [
+      el('div', { class: 'phone-wrap' }, [
+        el('span', { class: 'prefix', text: '🇺🇬 +256' }),
+        input,
+      ]),
+      net,
+    ]),
+    value: () => '256' + input.value.replace(/\D/g, ''),
+  };
+}
+
+/* Naming the network back to them is the cheapest confidence in the whole
+ * flow: no lookup, no request, just a prefix table - and it catches the
+ * transposed digit before a stranger's handset rings. */
+function networkOf(digits) {
+  const two = digits.slice(0, 2);
+  if (digits.length < 3) return '';
+  if (['77', '78', '76', '39'].includes(two)) return 'MTN Uganda';
+  if (['70', '74', '75', '20'].includes(two)) return 'Airtel Uganda';
+  return '';
+}
+
+/* A stored MSISDN back to the nine digits the field shows. */
+function localDigits(msisdn) {
+  const digits = String(msisdn || '')
+    .replace(/\D/g, '').replace(/^256/, '').replace(/^0+/, '').slice(0, 9);
+  return digits.replace(/(\d{3})(?=\d)/g, '$1 ').trim();
 }
 
 /* ── app page ────────────────────────────────────────────────────────── */
@@ -2067,7 +2134,9 @@ function payDialog(plan, mode) {
     return;
   }
 
-  const phone = el('input', { class: 'input mono', placeholder: '07XX 000 000' });
+  // Prefilled with the number the account was verified on, which is the one we
+  // already know reaches this person. Most people will not have to type at all.
+  const phone = phoneField(state.user && state.user.phone);
   const scenario = el('select', { class: 'input' }, [
     el('option', { value: 'approve', text: 'They approve it' }),
     el('option', { value: 'decline', text: 'They decline it' }),
@@ -2078,7 +2147,7 @@ function payDialog(plan, mode) {
 
   const submit = async () => {
     try {
-      const body = { plan: plan.id, phone: phone.value };
+      const body = { plan: plan.id, phone: phone.value() };
       if (mode === 'demo') body.scenario = scenario.value;
       const { payment } = await api('POST', '/api/billing/pay', body);
       close();
@@ -2092,7 +2161,7 @@ function payDialog(plan, mode) {
     `${plan.name} - ${money(plan.amount)}`,
     'You will get a prompt on your phone. Your PIN is entered there, never here.',
     [
-      field('Mobile money number', phone, 'The number that will be charged.'),
+      field('Mobile money number', phone.node, 'The number that will be charged.'),
       mode === 'demo'
         ? field('Demo: what the handset does', scenario,
             'Only in demo mode. The unhappy paths are the ones worth watching.')

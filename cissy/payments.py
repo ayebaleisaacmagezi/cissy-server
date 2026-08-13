@@ -462,9 +462,15 @@ def normalise_phone(raw: str) -> str:
     text = "".join(c for c in str(raw) if c.isdigit() or c == "+").lstrip("+")
     if text.startswith("0"):
         text = "256" + text[1:]
+    elif len(text) == 9 and text.startswith("7"):
+        # A bare subscriber number. The field asks for exactly these nine digits
+        # under a fixed +256, so one that arrives without the code is Ugandan
+        # rather than a nine-digit number from somewhere else. Without this it
+        # would pass the length check and go to the gateway as a wrong MSISDN.
+        text = "256" + text
     if not text.isdigit() or not 9 <= len(text) <= 15:
         raise ValidationError(
             "That does not look like a mobile money number. "
-            "Use the full number, for example 0772000000."
+            "It should be nine digits, for example 772 000 000."
         )
     return text
