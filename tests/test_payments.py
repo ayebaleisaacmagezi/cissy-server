@@ -331,7 +331,12 @@ class Polling(ServiceCase):
 
         after = service.poll(payment.reference)
         self.assertEqual(after.status, ABANDONED)
-        self.assertIn("try again", after.message)
+        self.assertIn("Nothing was charged", after.message)
+        # And it does not say they declined. Nobody refused anything - the
+        # prompt sat on a handset and nothing came back, which is the ordinary
+        # way this ends. Wording that implies a decision blames a customer for
+        # something they never did.
+        self.assertNotIn("approve", after.message.lower())
 
     def test_the_sweeper_resumes_payments_it_did_not_start(self):
         # The property that matters when the browser is closed or the server is

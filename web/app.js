@@ -2697,7 +2697,7 @@ async function showBilling() {
           ['Plan', 'Amount', 'Paid'].map((h) => el('th', { text: h })))]),
         el('tbody', {}, paid.map((payment) =>
           el('tr', { class: 'row', onclick: () => go('#/billing/pay/' + payment.reference) }, [
-            el('td', { text: planName(data.plans, payment.plan) }),
+            el('td', { text: payment.plan_name }),
             el('td', { text: money(payment.amount) }),
             el('td', { class: 'app-url', text: shortDate(payment.created_at) }),
           ]))),
@@ -2706,10 +2706,6 @@ async function showBilling() {
   }
 }
 
-function planName(plans, id) {
-  const found = (plans || []).find((plan) => plan.id === id);
-  return found ? found.name : id;
-}
 
 function subscriptionCard(user) {
   if (!user) return el('div', {});
@@ -2819,9 +2815,25 @@ async function showPayment(reference) {
 
   const draw = (data) => {
     const payment = data.payment;
+
+    // A prompt nobody answered leaves nothing to look at and nothing to do.
+    // Standing on a dead page reads as being stuck, so they go back to the one
+    // screen where starting again is a single tap.
+    // Nothing came back inside the two minutes. There is nothing on this page
+    // to read and nothing to do, so they go where starting again is one tap.
+    // Admins stay, because an unanswered payment is exactly the kind they get
+    // asked about later.
+    if (payment.status === 'abandoned' && !payment.trail) {
+      stopBillingPoll();
+      toast('That did not go through. Nothing was charged.');
+      go('#/billing');
+      return;
+    }
+
     clear(head).append(
-      el('h2', { class: 'sec', text: money(payment.amount) + ' · ' + payment.plan }),
-      el('p', { class: 'sub mono', text: payment.reference }),
+      el('h2', { class: 'sec', text: money(payment.amount) + ' · ' + payment.plan_name }),
+      // Our lookup key, not theirs. Kept for admins, who quote it in support.
+      payment.trail ? el('p', { class: 'sub mono', text: payment.reference }) : null,
       statusBanner(payment),
     );
 
@@ -2854,7 +2866,9 @@ async function showPayment(reference) {
               ? kv('Gives up in', Math.max(0, payment.expires_in) + 's')
               : null,
           ].filter(Boolean)) : null,
-          el('button', {
+          // Only while there is something to check. On a settled payment it is
+          // a button that asks a question already answered.
+          payment.status === 'pending' ? el('button', {
             class: 'btn full',
             text: 'Check now',
             onclick: async () => {
@@ -2862,7 +2876,7 @@ async function showPayment(reference) {
                 draw(await api('POST', `/api/billing/payments/${reference}/check`));
               } catch (error) { toast(error.message, true); }
             },
-          }),
+          }) : null,
         ]),
       ]),
     );
@@ -2898,9 +2912,9 @@ function statusBanner(payment) {
   }
   if (payment.status === 'abandoned') {
     return el('div', { class: 'banner warn' }, [
-      el('b', { text: 'The prompt expired' }),
-      'It was not approved in time, so the server stopped checking. Starting ' +
-      'again sends a fresh prompt.',
+      el('b', { text: 'No answer in time' }),
+      'Nothing came back from the handset inside the two minutes, so the ' +
+      'server stopped asking. Nothing was charged.',
     ]);
   }
   // Pending is the state worth designing. Nothing here is working on their

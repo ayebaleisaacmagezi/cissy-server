@@ -109,9 +109,13 @@ class Payment:
         return self.started + CHASE_SECONDS
 
     def to_json(self) -> dict[str, Any]:
+        plan = PLANS.get(self.plan)
         data = {
             "reference": self.reference,
             "plan": self.plan,
+            # The id is a database key. Sent beside it so no screen has to work
+            # out on its own that "pro" is read aloud as "Business".
+            "plan_name": plan.name if plan else self.plan,
             "amount": self.amount,
             "phone": self.phone,
             "owner": self.owner,
@@ -341,7 +345,12 @@ class PaymentService:
                     replace(
                         payment,
                         status=ABANDONED,
-                        message="The prompt was not approved in time. You can try again.",
+                        # Not "they did not approve it". Nobody refused
+                        # anything - the prompt sat on a handset and nothing
+                        # came back, which is the ordinary way this ends. Copy
+                        # that implies a decision blames someone for a thing
+                        # they did not do.
+                        message="The payment did not complete in time. Nothing was charged.",
                         trail=payment.trail
                         + (f"{_stamp()} · gave up after {CHASE_SECONDS // 60} minutes",),
                     )
