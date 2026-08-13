@@ -133,3 +133,134 @@ class CustomOfflineHtmlTest(unittest.TestCase):
         with self.assertRaises(ValidationError) as caught:
             validate(make(offline_custom_html="x" * 200_001))
         self.assertIn("200", str(caught.exception))
+
+
+class WebsiteNavigationTest(unittest.TestCase):
+    """Hiding the site's own navigation, so a native bar is not a second one."""
+
+    def test_accepts_ordinary_selectors(self):
+        validate(make(hide_selectors=(".mobile-nav", "#site-header .menu")))
+
+    def test_rejects_a_selector_carrying_a_rule_body(self):
+        # The selector ends up inside a CSS rule, inside a JavaScript string,
+        # inside a Dart string. A brace escapes the first of those.
+        with self.assertRaises(ValidationError) as caught:
+            validate(make(hide_selectors=(".nav { display: block }",)))
+        self.assertIn("braces", str(caught.exception))
+
+    def test_rejects_every_character_that_could_break_out(self):
+        for selector in ('.a"b', ".a'b", ".a;b", ".a\b", ".a<b", ".a>b", ".a`b"):
+            with self.subTest(selector=selector):
+                with self.assertRaises(ValidationError):
+                    validate(make(hide_selectors=(selector,)))
+
+    def test_rejects_a_selector_spanning_lines(self):
+        with self.assertRaises(ValidationError):
+            validate(make(hide_selectors=(".nav\n.menu",)))
+
+    def test_rejects_an_overlong_selector(self):
+        with self.assertRaises(ValidationError):
+            validate(make(hide_selectors=("." + "a" * 130,)))
+
+    def test_rejects_too_many_selectors(self):
+        with self.assertRaises(ValidationError):
+            validate(make(hide_selectors=tuple(f".n{i}" for i in range(21))))
+
+    def test_normalise_keeps_selector_case(self):
+        # Class names are case-sensitive to a browser, unlike domains.
+        config = normalise(make(hide_selectors=("  .mobileNav  ", ".mobileNav")))
+        self.assertEqual(config.hide_selectors, (".mobileNav",))
+
+    def test_accepts_a_body_class(self):
+        validate(make(body_class="web2app-native"))
+
+    def test_rejects_a_body_class_that_is_not_one_name(self):
+        for value in ("web2app native", ".web2app", "2app", "app!"):
+            with self.subTest(value=value):
+                with self.assertRaises(ValidationError):
+                    validate(make(body_class=value))
+
+    def test_accepts_a_url_flag(self):
+        validate(make(url_flag="source=web2app"))
+
+    def test_rejects_a_url_flag_that_is_not_a_pair(self):
+        for value in ("source", "source=", "a=b&c=d"):
+            with self.subTest(value=value):
+                with self.assertRaises(ValidationError):
+                    validate(make(url_flag=value))
+
+    def test_normalise_drops_a_leading_question_mark(self):
+        # "?source=web2app" is what somebody copies out of a browser bar.
+        self.assertEqual(normalise(make(url_flag="?source=web2app")).url_flag,
+                         "source=web2app")
+
+    def test_round_trips_through_json(self):
+        config = make(
+            hide_selectors=(".mobile-nav",),
+            body_class="web2app-native",
+            url_flag="source=web2app",
+        )
+        restored = AppConfig.from_json(config.to_json())
+        self.assertEqual(restored.hide_selectors, (".mobile-nav",))
+        self.assertEqual(restored.body_class, "web2app-native")
+        self.assertEqual(restored.url_flag, "source=web2app")
+
+
+class TabMatchTest(unittest.TestCase):
+    """The extra paths a navigation tab lights up for."""
+
+    def tabs(self, **extra):
+        return dict(
+            nav_style="bottom",
+            nav_tabs=(
+                {"label": "Home", "icon": "home", "target": "/"},
+                dict({"label": "Account", "icon": "person", "target": "/account"},
+                     **extra),
+            ),
+        )
+
+    def test_accepts_paths(self):
+        validate(make(**self.tabs(match=["/profile", "/orders"])))
+
+    def test_a_list_survives_the_json_reader(self):
+        # Every other value on a tab is coerced with str(). Doing that here
+        # would store "['/profile']", which matches nothing and says nothing.
+        config = make(**self.tabs(match=["/profile"]))
+        restored = AppConfig.from_json(config.to_json())
+        self.assertEqual(restored.nav_tabs[1]["match"], ["/profile"])
+
+    def test_a_non_list_match_is_treated_as_absent(self):
+        data = make(**self.tabs()).to_json()
+        data["nav_tabs"][1]["match"] = "/profile"
+        self.assertEqual(AppConfig.from_json(data).nav_tabs[1]["match"], [])
+
+    def test_rejects_a_match_that_is_not_a_path(self):
+        with self.assertRaises(ValidationError) as caught:
+            validate(make(**self.tabs(match=["https://elsewhere.example/x"])))
+        self.assertIn("starting with /", str(caught.exception))
+
+    def test_rejects_matches_on_a_native_tab(self):
+        # A native screen is not showing a page of the website at all.
+        with self.assertRaises(ValidationError):
+            validate(make(
+                features=("Saved items",),
+                nav_style="bottom",
+                nav_tabs=(
+                    {"label": "Home", "icon": "home", "target": "/"},
+                    {"label": "Saved", "icon": "bookmark",
+                     "target": "native:saved", "match": ["/saved"]},
+                ),
+            ))
+
+    def test_rejects_too_many_matches(self):
+        with self.assertRaises(ValidationError):
+            validate(make(**self.tabs(match=[f"/p{i}" for i in range(11)])))
+
+    def test_normalise_strips_and_dedupes(self):
+        config = normalise(make(**self.tabs(match=["  /profile ", "/profile", ""])))
+        self.assertEqual(config.nav_tabs[1]["match"], ["/profile"])
+
+    def test_tabs_without_matches_still_work(self):
+        config = normalise(make(**self.tabs()))
+        validate(config)
+        self.assertEqual(config.nav_tabs[1]["match"], [])

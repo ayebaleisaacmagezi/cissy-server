@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>The offline screen - Web2App docs</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/docs/docs.css">
+</head>
+<body>
+<article>
+  <h1>The offline screen</h1>
+  <p class="lede">
+    What people see when the page cannot load. This is the difference between an
+    app that looks broken and one that looks like it knows what happened.
+  </p>
+
+  <h2>Why it matters more than it sounds</h2>
+  <p>
+    Without it, a phone with no signal shows the browser engine's own error - a
+    grey page with a technical message and your website's address on it. People
+    read that as "this app is broken", not "my connection is down", and it is
+    the single most common thing that turns into a one-star review.
+  </p>
+
+  <h2>The built-in screen</h2>
+  <p>
+    On by default. It uses your theme colour, says what happened in a sentence,
+    and offers a Try again button. It tells the two cases apart:
+  </p>
+  <ul>
+    <li>
+      <b>No connection at all</b> - the phone cannot reach the network. The
+      screen says to check the connection.
+    </li>
+    <li>
+      <b>The site did not answer</b> - the phone is online but your server did
+      not respond, or answered with an error. Telling somebody to check their
+      wifi in that situation is wrong and wastes their time.
+    </li>
+  </ul>
+  <p>
+    The screen stays up until a page genuinely loads. It does not flash away the
+    moment a retry starts, because a failed retry would show the broken page
+    underneath for a second first.
+  </p>
+  <p>
+    If Saved items is on, the offline screen also offers what has been saved to
+    the phone - so an app with no connection still has something to show.
+  </p>
+
+  <h2>Your own screen</h2>
+  <p>
+    You can replace it entirely with your own HTML. Paste a complete document
+    into the editor on the Offline page and it is built into the app as an
+    asset, so it works with no connection - which is the whole point.
+  </p>
+  <pre><code>&lt;!doctype html&gt;
+&lt;html&gt;
+  &lt;head&gt;&lt;meta name="viewport" content="width=device-width, initial-scale=1"&gt;&lt;/head&gt;
+  &lt;body&gt;
+    &lt;h1&gt;No connection&lt;/h1&gt;
+    &lt;p&gt;We will be here when you are back.&lt;/p&gt;
+    &lt;a href="app://retry"&gt;Try again&lt;/a&gt;
+  &lt;/body&gt;
+&lt;/html&gt;</code></pre>
+
+  <div class="note info">
+    <b>The one special address</b>
+    <p>
+      A link to <code>app://retry</code> is the Try again button. The app
+      intercepts it and reloads the page that failed. Everything else in your
+      document is ordinary HTML and CSS.
+    </p>
+  </div>
+
+  <div class="note warn">
+    <b>It has to be self-contained</b>
+    <p>
+      There is no connection when this screen is shown, so anything it fetches
+      from the network will not arrive. No external stylesheets, no web fonts,
+      no images from a CDN. Put the CSS in a <code>&lt;style&gt;</code> block and
+      draw artwork as inline SVG. Keep the whole thing under 200 KB - it ships
+      inside every copy of your app.
+    </p>
+  </div>
+
+  <p>
+    The Offline page has a few starter screens you can drop in and edit, and the
+    phone preview renders your document exactly as the app will.
+  </p>
+
+  <h2>Turning it off</h2>
+  <p>
+    You can switch the offline screen off entirely, and the app will show the
+    browser engine's own error page instead. There is very little reason to do
+    this. It exists for the rare case where a site already handles its own
+    offline state with a service worker and would rather keep control.
+  </p>
+</article>
+<script src="/docs/docs.js"></script>
+</body>
+</html>

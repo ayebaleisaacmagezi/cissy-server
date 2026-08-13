@@ -19,8 +19,21 @@ a `.zip` for the iOS half.
 Mobile-money subscriptions through Collecto, running against a simulator until
 there is an account - see below.
 
-Not yet: there are no user accounts, so the subscription is server-wide rather
-than per-customer. Old build artifacts are never deleted.
+Accounts, so the apps and the money belong to somebody. Sign-up is a phone
+number and a code; each customer's apps live under their own directory, which
+makes ownership structural rather than a check somebody has to remember.
+
+Push notifications through the customer's own Firebase project. This server
+holds the two client configuration files - which ship inside every app and are
+not secrets - and never the service-account key that can actually send. The
+generated app carries the registration, the permission prompt, categories, a
+notification router and a local history; the Notifications page generates
+working sending code for the customer's own backend.
+
+Taking the website's own navigation down, so a native bottom bar is not simply
+a second one, and lighting up whichever tab the page on screen belongs to.
+
+Not yet: old build artifacts are never deleted.
 
 The splash image is applied everywhere it can be: it is the Android launch
 window itself, so the app opens straight into it, and on Android 12+ the
@@ -49,7 +62,7 @@ No venv, no `pip install` - it uses only the standard library. Listens on
 
 | Variable | Default | |
 |---|---|---|
-| `CISSY_PASSWORD` | none | Shared password. Without it the server refuses to bind to anything but localhost. |
+| `CISSY_PASSWORD` | none | Legacy shared password, kept so an existing single-user deployment does not lock itself out on upgrade. Customers sign in with a phone number. |
 | `CISSY_HOST` | `127.0.0.1` | |
 | `CISSY_PORT` | `8080` | |
 | `CISSY_ROOT` | this directory | Where `projects/` lives. |
@@ -73,7 +86,12 @@ python3 -m unittest discover -s tests -t . -q
 
 ```
 server.py        the backend - runs commands, streams logs
+cissy/
+  template/      the generated app's source, split by what it emits
+  firebase.py    reading the uploaded Firebase configuration files
+  pushdocs.py    the customer's own sending code, with their values in it
 web/             the UI (plain HTML/CSS/JS, no build step)
+  docs/          the documentation site, served at /docs
 projects/        runtime data, gitignored
   <app-id>/
     config.json  the app's settings
@@ -81,7 +99,7 @@ projects/        runtime data, gitignored
     builds/<n>/  artifacts and log for one build
 payments/        one JSON file per payment, gitignored
   _demo/         simulated handset prompts, demo mode only
-subscription.json  the current plan (server-wide until accounts exist)
+accounts.db      users, sessions and build allowances (SQLite)
 docs/PLAN.md     what is built and what is next
 ```
 

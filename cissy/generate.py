@@ -17,7 +17,7 @@ import re
 import shutil
 from pathlib import Path
 
-from . import template
+from . import firebase, template
 from .config import AppConfig
 from .errors import CissyError
 from .process import LogSink, stream
@@ -65,6 +65,7 @@ def generate(
     _apply_launch_screen(config, store, directory)
     _write(directory / "android" / "gradle.properties", template.gradle_properties())
     _write_main_activity(directory, config)
+    _apply_firebase(config, store, directory, on_log)
     _patch_info_plist(directory, config, on_log)
     _remove_default_test(directory)
     _pin_android_toolchain(directory, on_log)
@@ -384,6 +385,138 @@ def _copy_icon(config: AppConfig, store: ProjectStore, directory: Path) -> str |
     return f"assets/icon/{config.icon_file}"
 
 
+# ── Firebase ─────────────────────────────────────────────────────────────
+
+# The Google Services Gradle plugin, which turns google-services.json into the
+# resources firebase_core reads at startup. Pinned for the same reason the AGP
+# version is: a generated project should build the same way in six months.
+GOOGLE_SERVICES_VERSION = "4.4.2"
+GOOGLE_SERVICES_ID = "com.google.gms.google-services"
+
+_PLUGINS_BLOCK = re.compile(r"plugins\s*\{", re.MULTILINE)
+
+
+def _apply_firebase(
+    config: AppConfig, store: ProjectStore, directory: Path, on_log: LogSink
+) -> None:
+    """Put the customer's Firebase configuration into the project.
+
+    The package check is repeated here even though the upload already made it.
+    The Android package id is editable afterwards, so a file that matched in
+    March can stop matching in April without anyone touching it - and the
+    result would be an app that builds, signs, installs and never receives a
+    notification. Better to refuse the build.
+
+    Switching push off removes the files again. The scaffold survives between
+    builds, so a stale google-services.json would otherwise keep initialising
+    Firebase in an app whose Dart no longer mentions it.
+    """
+    android_target = directory / "android" / "app" / firebase.ANDROID_FILENAME
+    ios_target = directory / "ios" / "Runner" / firebase.IOS_FILENAME
+
+    if not config.push_enabled:
+        for stale in (android_target, ios_target):
+            stale.unlink(missing_ok=True)
+        _patch_google_services(directory, enabled=False, on_log=on_log)
+        return
+
+    source = (
+        store.assets_dir(config.id) / config.firebase_android_file
+        if config.firebase_android_file
+        else None
+    )
+    if source is None or not source.is_file():
+        raise CissyError(
+            f"Push notifications are on, but no {firebase.ANDROID_FILENAME} has "
+            f"been uploaded. Add an Android app in your Firebase project using "
+            f"the package name {config.android_package_id}, download the file, "
+            f"and upload it on the Notifications page."
+        )
+
+    app = firebase.read(source.read_bytes(), firebase.ANDROID)
+    firebase.check(app, config.android_package_id)
+    android_target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, android_target)
+    on_log(f"Firebase project {app.project_id} configured for Android.")
+
+    ios_source = (
+        store.assets_dir(config.id) / config.firebase_ios_file
+        if config.firebase_ios_file
+        else None
+    )
+    if ios_source is not None and ios_source.is_file():
+        ios_app = firebase.read(ios_source.read_bytes(), firebase.IOS)
+        firebase.check(ios_app, config.ios_bundle_id)
+        ios_target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ios_source, ios_target)
+        on_log(f"Firebase project {ios_app.project_id} configured for iOS.")
+    else:
+        ios_target.unlink(missing_ok=True)
+        on_log(
+            "No iOS Firebase file uploaded - the Android app is unaffected, but "
+            "the project opened on a Mac will not receive notifications."
+        )
+
+    _patch_google_services(directory, enabled=True, on_log=on_log)
+
+
+def _patch_google_services(
+    directory: Path, *, enabled: bool, on_log: LogSink
+) -> None:
+    """Declare and apply the Google Services plugin, or take it back out.
+
+    Written the way `signing.patch_gradle` is: recognise the shape, change it,
+    and say so loudly when neither shape is recognised. A silent no-op here
+    produces an app that builds and installs and never receives anything, which
+    is the failure this whole path exists to prevent.
+    """
+    settings = directory / "android" / "settings.gradle.kts"
+    build = directory / "android" / "app" / "build.gradle.kts"
+    if not settings.is_file() or not build.is_file():
+        if enabled:
+            raise CissyError(
+                "The generated Android project is not in the expected format, "
+                "so Firebase could not be wired into it."
+            )
+        return
+
+    declaration = (
+        f'    id("{GOOGLE_SERVICES_ID}") version "{GOOGLE_SERVICES_VERSION}" '
+        f"apply false"
+    )
+    application = f'    id("{GOOGLE_SERVICES_ID}")'
+
+    for path, line in ((settings, declaration), (build, application)):
+        contents = path.read_text(encoding="utf-8")
+        present = GOOGLE_SERVICES_ID in contents
+
+        if not enabled:
+            if present:
+                kept = [
+                    row
+                    for row in contents.split("\n")
+                    if GOOGLE_SERVICES_ID not in row
+                ]
+                _write(path, "\n".join(kept))
+                on_log(f"Removed the Firebase plugin from {path.name}.")
+            continue
+
+        if present:
+            continue
+
+        match = _PLUGINS_BLOCK.search(contents)
+        if not match:
+            raise CissyError(
+                f"Could not find the plugins block in {path.name}, so the "
+                f"Firebase plugin was not added. Notifications would not work "
+                f"in the built app, so the build has been stopped rather than "
+                f"producing one that looks fine."
+            )
+        cut = match.end()
+        _write(path, contents[:cut] + "\n" + line + contents[cut:])
+        on_log(f"Added the Firebase plugin to {path.name}.")
+
+
 # ── Info.plist ───────────────────────────────────────────────────────────
 
 
@@ -403,7 +536,77 @@ def _patch_info_plist(directory: Path, config: AppConfig, on_log: LogSink) -> No
     if "Deep links" in set(config.features):
         contents = _add_url_scheme(contents, template.deep_link_scheme(config))
 
+    # Lets iOS wake the app for a message it has not displayed yet. Removed
+    # again when push is switched off - the scaffold survives between builds.
+    contents = _set_plist_array(
+        contents,
+        "UIBackgroundModes",
+        ["remote-notification"] if config.push_enabled else [],
+    )
+
+    entitlements = directory / "ios" / "Runner" / "Runner.entitlements"
+    if config.push_enabled:
+        _write(entitlements, ENTITLEMENTS)
+        on_log(
+            "Wrote ios/Runner/Runner.entitlements. On the Mac, add the Push "
+            "Notifications capability in Xcode - that is what points the build "
+            "at it."
+        )
+    else:
+        entitlements.unlink(missing_ok=True)
+
     _write(path, contents)
+
+
+_PLIST_ARRAY = re.compile(
+    r"\n?\t*<key>{key}</key>\s*<array>.*?</array>", re.DOTALL
+)
+
+
+def _set_plist_array(contents: str, key: str, values: list[str]) -> str:
+    """Set, replace or remove an array entry.
+
+    `_set_plist_string` only knows how to write strings, and
+    `UIBackgroundModes` is an array - the entry iOS reads to decide whether an
+    app may be woken by a notification it has not shown yet.
+
+    An empty list removes the entry rather than writing an empty array,
+    because the scaffold survives between builds: turning push off has to take
+    the entry back out, not leave a hollow one behind.
+    """
+    pattern = re.compile(
+        _PLIST_ARRAY.pattern.format(key=re.escape(key)), re.DOTALL
+    )
+    if not values:
+        return pattern.sub("", contents)
+
+    rows = "".join(f"\t\t<string>{value}</string>\n" for value in values)
+    entry = f"\n\t<key>{key}</key>\n\t<array>\n{rows}\t</array>"
+    if pattern.search(contents):
+        return pattern.sub(entry, contents, count=1)
+
+    marker = "</dict>\n</plist>"
+    if marker not in contents:
+        raise CissyError("The iOS Info.plist is not in the expected format.")
+    return contents.replace(marker, entry.lstrip("\n") + "\n" + marker, 1)
+
+
+# What Xcode writes when somebody ticks Push Notifications. Generated so the
+# file exists and says the right thing; it only takes effect once the
+# capability is added in Xcode, which is also what points the build at it.
+# Editing project.pbxproj from here to do that ourselves would mean writing a
+# format with no public specification, and failing on the customer's Mac where
+# we could not see it.
+ENTITLEMENTS = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+\t<key>aps-environment</key>
+\t<string>development</string>
+</dict>
+</plist>
+"""
 
 
 def _set_plist_string(contents: str, key: str, value: str) -> str:

@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Setting up notifications - Web2App docs</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/docs/docs.css">
+</head>
+<body>
+<article>
+  <h1>Setting it up</h1>
+  <p class="lede">
+    Creating your Firebase project and connecting it to your app. Twenty minutes
+    for Android, once.
+  </p>
+
+  <div class="note warn">
+    <b>Settle your identifiers first</b>
+    <p>
+      Firebase registers an app against its package name, and so do Google Play
+      and the App Store. Changing yours afterwards means redoing this and
+      starting a new store listing. Check the Identity page before you begin.
+    </p>
+  </div>
+
+  <ol class="steps">
+    <li>
+      <b>Turn push on</b>
+      Open the <b>Notifications</b> page for your app and switch it on. The page
+      then walks you through the rest and tracks what is still outstanding.
+    </li>
+    <li>
+      <b>Create a Firebase project</b>
+      Open <a href="https://console.firebase.google.com" target="_blank" rel="noopener">console.firebase.google.com</a>,
+      sign in with your own Google account, and create a project. Name it after
+      your business. You can decline Google Analytics; notifications do not need
+      it.
+    </li>
+    <li>
+      <b>Add an Android app to the project</b>
+      In the project, choose Add app and pick Android. It asks for a package
+      name - paste the one shown on the Notifications page. It must match
+      exactly. The nickname and the signing certificate fields can be left
+      alone for now.
+    </li>
+    <li>
+      <b>Download <code>google-services.json</code> and upload it</b>
+      Firebase offers the file at the end of registration. Upload it on the
+      Notifications page. Web2App reads it and checks it belongs to this app.
+      <div class="note stop" style="margin-top:10px">
+        <b>If it says the file belongs to another app</b>
+        <p>
+          The file was downloaded from a different Firebase app. Go back to
+          Firebase, add an app with the exact package name shown, and download
+          that one's file. Uploading the wrong file would produce an app that
+          builds, installs, and never receives anything - so it is refused.
+        </p>
+      </div>
+    </li>
+    <li>
+      <b>Set up your categories</b>
+      Add the categories you will send to - General, Offers, Order updates.
+      Decide which are on by default for a new install. Marketing off by default
+      is usually the right call; order updates on.
+    </li>
+    <li>
+      <b>Write the permission message</b>
+      This is your app's own explanation, shown before the phone's prompt. Say
+      what people get, not that you would like permission. "Get told when your
+      order is ready" beats "Enable notifications".
+    </li>
+    <li>
+      <b>Build and test</b>
+      Build the app, install it, and open it. On the second visit the app puts
+      your explanation up and then asks the phone for permission. Then use the
+      test panel at the foot of the Notifications page to send yourself one.
+    </li>
+  </ol>
+
+  <h2>When the app asks</h2>
+  <p>
+    Not on first launch. Somebody who has just opened your app for the first
+    time has no reason to say yes, and on both Android and iPhone a refusal can
+    only be undone by the user digging into system settings. So the app waits
+    until the second visit, shows your explanation first, and only asks the
+    operating system if they agree to that.
+  </p>
+  <p>
+    That costs you a few days of delay and buys a much higher acceptance rate.
+  </p>
+
+  <h2>While the app is open</h2>
+  <p>
+    Both platforms hand a message to the app rather than displaying it when the
+    app is in the foreground, so you choose what happens:
+  </p>
+  <table>
+    <thead><tr><th>Setting</th><th>What people see</th></tr></thead>
+    <tbody>
+      <tr><td>Show a notification</td><td>The same banner as when the app is closed. Predictable, and the default.</td></tr>
+      <tr><td>Show a bar in the app</td><td>A quieter strip at the top with an Open button. Good for anything that arrives often.</td></tr>
+      <tr><td>Nothing visible</td><td>Recorded but not shown. For silent updates.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>The notifications screen</h2>
+  <p>
+    You can give the app a tab that lists what this phone has received, with the
+    category switches behind it. Add a navigation tab in Studio and set it to
+    <b>Notifications</b>.
+  </p>
+  <p>
+    It is a convenience history kept on the phone, not a message store. It holds
+    the last fifty, and clearing the app's data clears it. Anything that has to
+    survive belongs on your own server.
+  </p>
+
+  <h2>Checking it worked</h2>
+  <p>
+    The foot of the Notifications page reports what is in place: whether the
+    configuration is valid, whether the build you last made included push, and
+    whether a device has registered. It also gives you a test device token you
+    can paste into Firebase's own message composer.
+  </p>
+  <div class="note">
+    <b>If the test does not arrive</b>
+    <ul style="margin-bottom:0">
+      <li>Was the app built <em>after</em> you uploaded the configuration file? Push is compiled in.</li>
+      <li>Did you accept the permission prompt on the phone?</li>
+      <li>Is the phone's notification setting for the app switched on in system settings?</li>
+      <li>If you sent to a category, is that category switched on inside the app?</li>
+    </ul>
+  </div>
+
+  <p>Next: <a href="/docs/notifications-sending">Sending</a>.</p>
+</article>
+<script src="/docs/docs.js"></script>
+</body>
+</html>

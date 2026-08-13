@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>How push works - Web2App docs</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/docs/docs.css">
+</head>
+<body>
+<article>
+  <h1>How push works</h1>
+  <p class="lede">
+    Notifications that arrive when your app is closed cannot come from the app
+    itself. They come from your server, through Google's delivery network, to
+    the phone. Web2App is not in that path.
+  </p>
+
+  <h2>The path a notification takes</h2>
+  <pre><code>Your website or backend
+        ↓
+Firebase Cloud Messaging  (Google)
+        ↓
+   ┌────┴────┐
+Android     APNs  (Apple)
+              ↓
+           iPhone</code></pre>
+  <p>
+    Web2App's part happens at build time: it puts the Firebase code into your
+    app and wires your configuration into it. Once your app is built, Web2App
+    can be switched off entirely and your notifications keep arriving.
+  </p>
+  <div class="note ok">
+    <b>That is deliberate, and it is worth understanding</b>
+    <p>
+      If every notification had to travel through us, we would become a
+      permanent dependency of your business - our uptime would be your uptime,
+      our rate limits your rate limits, and our bill would eventually be your
+      bill. Sending directly means none of that is true.
+    </p>
+  </div>
+
+  <h2>Why you need a Firebase project</h2>
+  <p>
+    Firebase Cloud Messaging is how Android and iPhone deliver notifications to
+    an app that is not running. There is no way around it, and it is free at the
+    volumes almost everybody sends.
+  </p>
+  <p>
+    <b>The project is yours.</b> You create it on your own Google account. We
+    never ask for your password, and we never see inside it. If you stop using
+    Web2App, the project, the apps registered in it and the ability to send stay
+    with you.
+  </p>
+  <div class="note info">
+    <b>What Web2App holds, and what it does not</b>
+    <p>
+      We hold the two <em>client</em> configuration files -
+      <code>google-services.json</code> and <code>GoogleService-Info.plist</code>.
+      These are not secrets: they ship inside every copy of your app, and anyone
+      who downloads it can read them.
+    </p>
+    <p>
+      The <em>server</em> credential - the service-account key that can actually
+      send a message - never comes to us. You keep it on your own server. Same
+      for the Apple push key, which you upload straight to Firebase.
+    </p>
+  </div>
+
+  <h2>Two kinds of notification, often confused</h2>
+  <table>
+    <thead><tr><th></th><th>What it is</th><th>Can it fire when the app is closed?</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Push</td>
+        <td>Your server sends a message that travels to the phone.</td>
+        <td>Yes. This is the one that needs Firebase.</td>
+      </tr>
+      <tr>
+        <td>Local</td>
+        <td>The app schedules something for later on the phone itself.</td>
+        <td>
+          Only for things the phone already knows about - a reminder somebody
+          set. It cannot know an order shipped.
+        </td>
+      </tr>
+    </tbody>
+  </table>
+  <p>
+    If you want to tell people about something that happened on your server,
+    you want push.
+  </p>
+
+  <h2>Categories</h2>
+  <p>
+    Rather than tracking individual phones, you send to a category and Firebase
+    delivers it to everybody subscribed. You define the categories in Studio -
+    General, Offers, Order updates, whatever suits - and each one gets a name
+    your backend sends to.
+  </p>
+  <p>
+    Your users can turn categories on and off inside the app, so somebody who
+    wants order updates but not marketing can have exactly that. Nobody has to
+    choose between all of it and none of it, which is what makes people turn
+    notifications off entirely.
+  </p>
+  <div class="note warn">
+    <b>Category names are permanent once you publish</b>
+    <p>
+      Installed apps subscribe by name. Rename a category after release and
+      every phone already subscribed silently stops receiving it, with nothing
+      anywhere reporting a problem. Change the label freely; leave the name
+      alone.
+    </p>
+  </div>
+
+  <h2>Messages meant for one person</h2>
+  <p>
+    Categories are broadcasts. For "your order is ready" you need to reach one
+    person, which means your backend has to know which phone belongs to which
+    user. There are two ways to arrange that, both covered in
+    <a href="/docs/notifications-sending">Sending</a>.
+  </p>
+
+  <h2>What happens when somebody taps one</h2>
+  <p>
+    A notification can carry a page to open. The app opens it inside itself,
+    after checking it is on your allowed domains - a notification cannot send
+    your users to somebody else's site, and it cannot make the app do anything
+    other than open a page.
+  </p>
+  <p>
+    That works whether the app was open, in the background, or completely
+    closed. A tap that starts the app from cold still lands on the right page.
+  </p>
+
+  <p>
+    Ready to set it up? <a href="/docs/notifications-setup">Setting it up</a>.
+  </p>
+</article>
+<script src="/docs/docs.js"></script>
+</body>
+</html>

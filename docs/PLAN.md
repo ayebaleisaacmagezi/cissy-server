@@ -209,19 +209,88 @@ is complete and demonstrable with no Collecto account. It can decline, stall,
 drop a connection and return rubbish; its prompts live on disk so that
 restarting the server mid-payment shows the sweeper resuming.
 
-**Not done:** there are no accounts, so a successful payment activates one
-server-wide `subscription.json` rather than a customer's. Nothing enforces the
-build allowance yet. Both wait on accounts.
+Accounts landed after this, so a payment now activates the plan on the account
+that made it and the build allowance is enforced per customer.
 
 **Needed to go live:** a Collecto username and an `x-api-key` registered against
 `198.23.52.184`. Real prices. HTTPS.
 
 ---
 
+## Phase 8 - accounts - **done**
+
+Phone number and a code, `hashlib.scrypt` for passwords, session tokens stored
+as SHA-256 digests. The one part of this server that is SQLite rather than JSON
+files, for a single line of schema: `phone TEXT NOT NULL UNIQUE`. Two people
+signing up on the same number at the same moment is exactly the case a file
+layout gets wrong, and the fix in files is a lock you have to remember to take
+everywhere.
+
+Each customer's apps live under their own directory, so a store rooted at one
+user cannot name another's - ownership is structural rather than a check
+somebody has to remember. Miss one check with a flat layout and a customer
+downloads another customer's keystore, which is a key Google will never reset.
+
+## Phase 9 - the native layer - **done**
+
+Written against `Web2App_Implementation_Spec.md`, in the order that let each
+release stand alone.
+
+- **The emitter split.** `template.py` was 2038 lines emitting one `main.dart`.
+  Now a package - `common`, `platform`, `nav`, `screens`, `webview`, `push` -
+  with `__init__` as the whole public surface. Proven neutral by diffing 178 KB
+  of generated output against the previous commit: byte-identical.
+- **Hiding the website's navigation** (spec §6). CSS selectors, a body class,
+  and a flag on the entry URL. Injected at document start rather than on load
+  finishing, because waiting means the site's own bar paints and then vanishes
+  on every page. Only on allowed hosts: the app does not restyle pages that are
+  not the customer's.
+- **Tab echo** (spec §7). The spec assumes one WebView; this app keeps one per
+  tab so switching never reloads. So a matched page lights its tab up without
+  switching to it, which is honest about where the user is without moving them.
+- **Push notifications** (spec §9-29, §35-43). Covered below.
+
+## Phase 10 - push notifications - **done**
+
+The customer owns the Firebase project. This server holds the two client
+configuration files, which ship inside every app and are not secrets, and never
+the service-account key that can actually send. The Apple key is never accepted
+at all - it goes straight to Firebase.
+
+Decisions worth keeping:
+
+- The package name is checked when the file is uploaded **and again at generate
+  time**. The Android package id is editable afterwards, so a file that matched
+  in March can stop matching in April, and the result would be an app that
+  builds, signs, installs and silently never receives anything.
+- The Gradle patch raises when it recognises neither shape, the way
+  `signing.patch_gradle` does. A silent no-op there produces exactly the same
+  invisible failure.
+- A notification payload arrives from the network, so the router accepts a fixed
+  set of actions, resolves the URL against the app's own home address, and runs
+  the result through the same allowed-domain check the WebView uses.
+- The permission prompt waits for the second visit and shows the customer's own
+  explanation first. Both platforms give an app one chance.
+- `project.pbxproj` is not patched. Adding the push capability there means
+  writing a format with no public specification, and getting it wrong fails in
+  Xcode on the customer's Mac where nobody here can see it. One checkbox.
+
+Two bugs the tests caught that `flutter analyze` could not: the messenger key
+was never attached to `MaterialApp`, so a foreground banner would have had a
+null `currentState` forever; and the upload handler shadowed a variable, writing
+the filename into `android_package_id` - which passed validation.
+
+## Phase 11 - documentation - **done**
+
+Thirteen pages under `web/docs/`, served at `/docs` signed out. Reuses the app's
+own stylesheet tokens so it reads as part of the product. No build step: one
+list in `docs.js` renders the sidebar and the previous/next links, so adding a
+page is a file and a line.
+
+---
+
 ## Deferred
 
-- **Auth.** One shared password before it faces the public internet. Until then,
-  bind to localhost and reach it over SSH tunnel or Tailscale.
 - **Artifact cleanup.** 7-day retention. 80 GB makes this tidiness rather than
   survival - roughly 15 GB of toolchain plus ~1 GB per app.
 - **iOS builds.** Not possible on Linux at any point; the `.zip` is the answer.
@@ -232,5 +301,8 @@ build allowance yet. Both wait on accounts.
   sidebar here.
 - Artifact retention. Nothing deletes old builds yet. 80 GB makes it tidiness
   rather than survival, but a 40 MB APK per build adds up.
-- Icons are uploaded and stored but not yet resized into the Android mipmaps and
-  the iOS appiconset, so the generated app still shows the default Flutter icon.
+- A hosted notification gateway (spec §30). The spec argues against it in §31
+  and it is right: the Collecto integration is already a demonstration of what
+  being in somebody else's runtime path costs.
+- The optional native modules from spec §8 - biometrics, QR scanner, maps. Three
+  are already sitting in `STUDIO_SOON`, which is the right place for them.

@@ -133,6 +133,7 @@ body {
   color: var(--ink-2); text-align: left; cursor: pointer;
   transition: background 140ms var(--ease), color 140ms var(--ease);
 }
+.nav-item { text-decoration: none; }
 .nav-item:hover { background: rgba(38, 37, 37, 0.05); color: var(--ink); }
 .nav-item.active { background: var(--accent-dim); color: var(--accent-ink); font-weight: 600; }
 .nav-item .gl { display: inline-flex; color: var(--ink-3); flex: none; font-size: 18px; }
@@ -779,10 +780,18 @@ body.signed-out .content { padding: 0; max-width: none; }
 }
 
 .tabedit {
-  display: grid; grid-template-columns: 1.1fr 1fr 1.2fr auto; gap: 8px;
+  display: grid; grid-template-columns: 1.1fr 1fr 1.2fr auto auto; gap: 8px;
   margin-bottom: 8px; align-items: center;
 }
 .tabedit .input { margin: 0; }
+
+/* the paths that also light a tab up - disclosed, because most tabs have none */
+.tabmatch {
+  border-left: 2px solid var(--soft);
+  margin: 0 0 10px 10px; padding: 8px 0 2px 14px;
+}
+.tabmatch > label { display: block; font-size: 12.5px; font-weight: 600; margin-bottom: 6px; }
+.tabmatch .hint { margin-top: 6px; }
 
 /* the phone preview - the frame is the border, the screen is the box */
 .phone-mock {
@@ -909,3 +918,74 @@ body.signed-out .content { padding: 0; max-width: none; }
 @media (max-width: 860px) {
   .studio-full { grid-template-columns: 1fr; }
 }
+
+/* one CSS selector the app hides, and its remove button. The last row is
+ * always blank: typing in it grows another, so there is no Add button for
+ * something most apps use once. */
+.selrow {
+  display: grid; grid-template-columns: 1fr auto; gap: 8px;
+  align-items: center; margin-bottom: 8px;
+}
+.selrow:last-child { margin-bottom: 0; }
+
+/* ── the notifications page ──────────────────────────────────────────────
+ * Numbered cards rather than a wizard: the whole job is one scroll, and the
+ * steps can be done in any order. */
+
+.grouphead { display: flex; align-items: center; margin: 0 0 14px; }
+.grouphead .group-title { margin: 0; }
+.stepnum {
+  width: 22px; height: 22px; border-radius: 50%; flex: none; margin-right: 10px;
+  display: inline-grid; place-items: center;
+  font-size: 11.5px; font-weight: 700;
+  background: var(--elevated); color: var(--accent-ink);
+}
+.stepnum.done { background: var(--ok); color: #fff; }
+.steppill {
+  margin-left: auto; font-size: 11.5px; font-weight: 600; color: var(--ink-3);
+}
+
+.copyrow { display: flex; gap: 8px; align-items: center; }
+.copyrow .input { flex: 1; }
+
+/* a choice that needs a sentence to explain it, which a select cannot carry */
+.radios { display: flex; flex-direction: column; gap: 9px; margin-bottom: 14px; }
+.radiocard {
+  display: flex; gap: 11px; align-items: flex-start; width: 100%;
+  padding: 13px 15px; text-align: left; font: inherit; color: inherit;
+  border: 1px solid var(--hair); border-radius: var(--r);
+  background: var(--surface); cursor: pointer;
+  transition: border-color 140ms var(--ease), background 140ms var(--ease);
+}
+.radiocard:hover:not(.off) { border-color: rgba(38, 37, 37, 0.25); }
+.radiocard.on { border-color: var(--accent); background: var(--accent-dim); }
+.radiocard.off { opacity: 0.55; cursor: default; }
+.radiocard .rd {
+  width: 17px; height: 17px; border-radius: 50%; flex: none; margin-top: 2px;
+  border: 2px solid var(--hair); background: var(--surface);
+}
+.radiocard.on .rd { border-color: var(--accent-ink); border-width: 5px; }
+.radiocard b { display: block; font-size: 13.5px; margin-bottom: 2px; }
+.radiocard > span > span { font-size: 12.5px; color: var(--ink-3); line-height: 1.5; }
+
+.stackpick { display: flex; gap: 7px; flex-wrap: wrap; }
+.stackpick .btn.on { background: var(--console); border-color: var(--console); color: #fff; }
+
+/* a switch with its explanation, used for push and for categories */
+.toprow {
+  display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center;
+}
+.toprow .tl { font-size: 13.5px; font-weight: 600; }
+.toprow .th { font-size: 11.5px; color: var(--ink-3); margin-top: 2px; }
+.sw {
+  width: 34px; height: 20px; border-radius: 999px; background: #d6dde4;
+  position: relative; flex: none; transition: background 160ms var(--ease);
+}
+.sw::after {
+  content: ''; position: absolute; top: 2px; left: 2px;
+  width: 16px; height: 16px; border-radius: 50%; background: #fff;
+  box-shadow: 0 1px 2px rgba(38, 37, 37, 0.25);
+  transition: left 160ms var(--ease);
+}
+.sw.on { background: var(--accent); }
+.sw.on::after { left: 16px; }

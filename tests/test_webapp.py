@@ -741,3 +741,260 @@ class FilePreviewTest(ServerTestCase):
         self.request("DELETE", f"/api/apps/{self.app_id}/files/icon")
         _, body = self.request("GET", f"/api/apps/{self.app_id}")
         self.assertIsNone(body["app"]["icon_file"])
+
+
+class FirebaseUploadTest(ServerTestCase):
+    """Uploading a Firebase configuration file.
+
+    The extension check is not the point. A file from the wrong Firebase app
+    parses perfectly and produces an app that installs and never receives a
+    notification, so it has to be read and compared here.
+    """
+
+    def setUp(self):
+        super().setUp()
+        _, body = self.request("POST", "/api/apps", {
+            "name": "Shop",
+            "website_url": "https://shop.example.com",
+            "android_package_id": "com.example.shop",
+        })
+        self.app_id = body["app"]["id"]
+
+    def android_file(self, package="com.example.shop"):
+        return json.dumps({
+            "project_info": {"project_id": "shop-mobile", "project_number": "1"},
+            "client": [{
+                "client_info": {
+                    "mobilesdk_app_id": "1:1:android:a",
+                    "android_client_info": {"package_name": package},
+                },
+            }],
+        }).encode("utf-8")
+
+    def put_file(self, slot, name, payload):
+        req = urllib.request.Request(
+            f"{self.base}/api/apps/{self.app_id}/files/{slot}",
+            data=payload, method="PUT",
+        )
+        req.add_header("Cookie", self.session)
+        req.add_header("X-Filename", name)
+        try:
+            with urllib.request.urlopen(req, timeout=10) as response:
+                return response.status, json.loads(response.read())
+        except urllib.error.HTTPError as error:
+            return error.code, json.loads(error.read())
+
+    def test_a_matching_file_is_accepted(self):
+        status, body = self.put_file(
+            "firebase_android", "google-services.json", self.android_file()
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(
+            body["app"]["firebase_android_file"], "firebase_android.json"
+        )
+
+    def test_a_file_for_another_app_is_refused(self):
+        status, body = self.put_file(
+            "firebase_android", "google-services.json",
+            self.android_file(package="com.other.app"),
+        )
+        self.assertEqual(status, 422)
+        self.assertIn("com.other.app", body["error"])
+        self.assertIn("com.example.shop", body["error"])
+
+    def test_a_refused_file_is_not_stored(self):
+        self.put_file("firebase_android", "google-services.json",
+                      self.android_file(package="com.other.app"))
+        _, body = self.request("GET", f"/api/apps/{self.app_id}")
+        self.assertIsNone(body["app"]["firebase_android_file"])
+
+    def test_something_that_is_not_a_firebase_file_is_refused(self):
+        status, body = self.put_file(
+            "firebase_android", "google-services.json", b'{"hello": "world"}'
+        )
+        self.assertEqual(status, 422)
+        self.assertIn("Firebase", body["error"])
+
+    def test_the_status_reports_the_project(self):
+        self.put_file("firebase_android", "google-services.json",
+                      self.android_file())
+        _, body = self.request("GET", f"/api/apps/{self.app_id}")
+        android = body["app"]["firebase"]["android"]
+        self.assertTrue(android["ok"])
+        self.assertEqual(android["project_id"], "shop-mobile")
+
+    def test_the_status_notices_a_package_changed_after_the_upload(self):
+        # Recomputed on every read rather than stored, because the thing it
+        # disagrees with is editable on another page.
+        self.put_file("firebase_android", "google-services.json",
+                      self.android_file())
+        self.request("PUT", f"/api/apps/{self.app_id}",
+                     {"android_package_id": "com.example.renamed"})
+        _, body = self.request("GET", f"/api/apps/{self.app_id}")
+        android = body["app"]["firebase"]["android"]
+        self.assertFalse(android["ok"])
+        self.assertIn("com.example.renamed", android["problem"])
+
+    def test_nothing_uploaded_reports_nothing(self):
+        _, body = self.request("GET", f"/api/apps/{self.app_id}")
+        self.assertIsNone(body["app"]["firebase"]["android"])
+        self.assertIsNone(body["app"]["firebase"]["ios"])
+
+    def test_the_file_can_be_removed(self):
+        self.put_file("firebase_android", "google-services.json",
+                      self.android_file())
+        _, body = self.request(
+            "DELETE", f"/api/apps/{self.app_id}/files/firebase_android"
+        )
+        self.assertIsNone(body["app"]["firebase_android_file"])
+
+    def test_an_upload_leaves_the_package_id_alone(self):
+        # The check reads android_package_id and the store writes
+        # firebase_android_file. Confusing the two writes the filename into
+        # the package id, which passes validation and breaks the build.
+        self.put_file("firebase_android", "google-services.json",
+                      self.android_file())
+        _, body = self.request("GET", f"/api/apps/{self.app_id}")
+        self.assertEqual(body["app"]["android_package_id"], "com.example.shop")
+
+
+class DocsTest(ServerTestCase):
+    """The documentation site under web/docs/.
+
+    Signed out, because somebody evaluating the product reads the docs before
+    they have an account.
+    """
+
+    signed_in = False
+
+    def setUp(self):
+        super().setUp()
+        docs = self.web / "docs"
+        docs.mkdir()
+        (docs / "index.html").write_text("<h1>Documentation</h1>", encoding="utf-8")
+        (docs / "studio.html").write_text("<h1>Studio</h1>", encoding="utf-8")
+        (docs / "docs.css").write_text("body { color: red; }", encoding="utf-8")
+
+    def get(self, path):
+        req = urllib.request.Request(self.base + path)
+        try:
+            with urllib.request.urlopen(req, timeout=10) as response:
+                return response.status, response.read().decode()
+        except urllib.error.HTTPError as error:
+            return error.code, error.read().decode()
+
+    def test_the_index_is_served_without_a_session(self):
+        status, body = self.get("/docs")
+        self.assertEqual(status, 200)
+        self.assertIn("Documentation", body)
+
+    def test_a_trailing_slash_is_the_same_page(self):
+        self.assertEqual(self.get("/docs/")[0], 200)
+
+    def test_a_page_works_without_its_extension(self):
+        # Which is what anybody links to.
+        status, body = self.get("/docs/studio")
+        self.assertEqual(status, 200)
+        self.assertIn("Studio", body)
+
+    def test_the_extension_still_works(self):
+        self.assertEqual(self.get("/docs/studio.html")[0], 200)
+
+    def test_assets_are_served(self):
+        status, body = self.get("/docs/docs.css")
+        self.assertEqual(status, 200)
+        self.assertIn("color: red", body)
+
+    def test_a_page_that_does_not_exist_is_still_a_404(self):
+        # The extensionless rule must not turn every typo into a page.
+        self.assertEqual(self.get("/docs/nonsense")[0], 404)
+        self.assertEqual(self.get("/docs/nonsense.html")[0], 404)
+
+    def test_it_cannot_be_used_to_escape_the_web_directory(self):
+        for path in ("/docs/../../accounts.db", "/docs/../server.py"):
+            with self.subTest(path=path):
+                self.assertNotEqual(self.get(path)[0], 200)
+
+
+class PushDocsTest(ServerTestCase):
+    """The generated integration guide."""
+
+    def setUp(self):
+        super().setUp()
+        _, body = self.request("POST", "/api/apps", {
+            "name": "Shop",
+            "website_url": "https://shop.example.com",
+            "android_package_id": "com.example.shop",
+        })
+        self.app_id = body["app"]["id"]
+
+    def upload_config(self, project="shop-mobile"):
+        payload = json.dumps({
+            "project_info": {"project_id": project, "project_number": "1"},
+            "client": [{
+                "client_info": {
+                    "mobilesdk_app_id": "1:1:android:a",
+                    "android_client_info": {"package_name": "com.example.shop"},
+                },
+            }],
+        }).encode("utf-8")
+        req = urllib.request.Request(
+            f"{self.base}/api/apps/{self.app_id}/files/firebase_android",
+            data=payload, method="PUT",
+        )
+        req.add_header("Cookie", self.session)
+        req.add_header("X-Filename", "google-services.json")
+        urllib.request.urlopen(req, timeout=10).read()
+
+    def guide(self, stack="node"):
+        return self.request(
+            "GET", f"/api/apps/{self.app_id}/push-docs?stack={stack}")
+
+    def test_it_lists_the_stacks_it_covers(self):
+        _, body = self.guide()
+        ids = [s["id"] for s in body["stacks"]]
+        self.assertIn("node", ids)
+        self.assertIn("rest", ids)
+
+    def test_the_project_id_comes_from_the_uploaded_file(self):
+        # Not from anything typed in, so the guide cannot describe a project
+        # the app is not actually built against.
+        self.upload_config()
+        _, body = self.guide()
+        self.assertTrue(body["configured"])
+        self.assertIn("shop-mobile", body["guide"]["code"])
+
+    def test_without_a_file_it_says_so_rather_than_inventing_one(self):
+        _, body = self.guide()
+        self.assertFalse(body["configured"])
+        self.assertIn("your-project-id", body["guide"]["code"])
+
+    def test_the_example_uses_a_configured_category(self):
+        self.upload_config()
+        self.request("PUT", f"/api/apps/{self.app_id}", {
+            "push_enabled": True,
+            "push_topics": [{"id": "orders", "label": "Orders", "default": True}],
+        })
+        _, body = self.guide()
+        self.assertEqual(body["guide"]["topic"], "orders")
+        self.assertIn("orders", body["guide"]["code"])
+
+    def test_every_stack_renders(self):
+        for stack in ("node", "php", "laravel", "python", "dotnet",
+                      "wordpress", "rest"):
+            with self.subTest(stack=stack):
+                status, body = self.guide(stack)
+                self.assertEqual(status, 200)
+                self.assertTrue(body["guide"]["code"].strip())
+
+    def test_every_guide_warns_about_the_service_account_key(self):
+        # The one mistake that would matter, in the place it is read.
+        for stack in ("node", "php", "python", "rest"):
+            with self.subTest(stack=stack):
+                _, body = self.guide(stack)
+                joined = " ".join(body["guide"]["notes"])
+                self.assertIn("server only", joined)
+
+    def test_an_unknown_stack_is_a_404(self):
+        status, _ = self.guide("cobol")
+        self.assertEqual(status, 404)

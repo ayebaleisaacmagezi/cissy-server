@@ -7,6 +7,7 @@ code compiles.
 """
 
 import dataclasses
+import json
 import shutil
 import tempfile
 import unittest
@@ -14,9 +15,14 @@ from pathlib import Path
 
 from cissy import template
 from cissy.config import AppConfig
+from cissy.errors import CissyError
 from cissy.generate import (
+    GOOGLE_SERVICES_ID,
+    GOOGLE_SERVICES_VERSION,
     PINNED_AGP,
     PINNED_GRADLE,
+    _apply_firebase,
+    _patch_info_plist,
     _apply_launch_screen,
     _pin_android_toolchain,
     _write_offline_html,
@@ -269,3 +275,207 @@ class OfflineHtmlTest(unittest.TestCase):
         off = dataclasses.replace(self.config, offline_fallback_enabled=False)
         self.assertIsNone(_write_offline_html(off, self.root))
         self.assertFalse(self.asset.exists())
+
+
+APP_BUILD_GRADLE = """\
+plugins {
+    id("com.android.application")
+    id("kotlin-android")
+    id("dev.flutter.flutter-gradle-plugin")
+}
+
+android {
+    namespace = "com.jokeb.mobile"
+}
+"""
+
+ANDROID_CONFIG_FILE = json.dumps({
+    "project_info": {"project_id": "jokeb-mobile", "project_number": "1"},
+    "client": [{
+        "client_info": {
+            "mobilesdk_app_id": "1:1:android:a",
+            "android_client_info": {"package_name": "com.jokeb.mobile"},
+        },
+    }],
+}).encode("utf-8")
+
+
+class FirebaseWiringTest(unittest.TestCase):
+    """Putting the customer's Firebase configuration into the project."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.store = ProjectStore(self.tmp / "projects")
+        self.project = self.tmp / "generated"
+        (self.project / "android" / "app").mkdir(parents=True)
+        (self.project / "android" / "settings.gradle.kts").write_text(
+            AGP_8_SETTINGS, encoding="utf-8"
+        )
+        (self.project / "android" / "app" / "build.gradle.kts").write_text(
+            APP_BUILD_GRADLE, encoding="utf-8"
+        )
+        self.logged = []
+
+    def config(self, **overrides) -> AppConfig:
+        base = dict(
+            id="jokeb",
+            name="Jokeb",
+            website_url="https://jokeb.example",
+            android_package_id="com.jokeb.mobile",
+            ios_bundle_id="com.jokeb.mobile",
+            push_enabled=True,
+            firebase_android_file="firebase_android.json",
+        )
+        base.update(overrides)
+        config = AppConfig(**base)
+        assets = self.store.assets_dir(config.id)
+        assets.mkdir(parents=True, exist_ok=True)
+        if config.firebase_android_file:
+            (assets / config.firebase_android_file).write_bytes(ANDROID_CONFIG_FILE)
+        return config
+
+    def apply(self, config):
+        _apply_firebase(config, self.store, self.project, self.logged.append)
+
+    def settings(self) -> str:
+        return (self.project / "android" / "settings.gradle.kts").read_text()
+
+    def app_gradle(self) -> str:
+        return (self.project / "android" / "app" / "build.gradle.kts").read_text()
+
+    def test_copies_the_file_where_the_plugin_looks_for_it(self):
+        self.apply(self.config())
+        placed = self.project / "android" / "app" / "google-services.json"
+        self.assertTrue(placed.is_file())
+        self.assertEqual(placed.read_bytes(), ANDROID_CONFIG_FILE)
+
+    def test_declares_and_applies_the_plugin(self):
+        self.apply(self.config())
+        self.assertIn(GOOGLE_SERVICES_ID, self.settings())
+        self.assertIn(GOOGLE_SERVICES_VERSION, self.settings())
+        self.assertIn(GOOGLE_SERVICES_ID, self.app_gradle())
+
+    def test_running_twice_does_not_declare_it_twice(self):
+        # The scaffold survives between builds, so generate runs over its own
+        # output every time.
+        self.apply(self.config())
+        self.apply(self.config())
+        self.assertEqual(self.settings().count(GOOGLE_SERVICES_ID), 1)
+        self.assertEqual(self.app_gradle().count(GOOGLE_SERVICES_ID), 1)
+
+    def test_turning_push_off_takes_it_all_back_out(self):
+        # Otherwise a stale google-services.json goes on initialising Firebase
+        # in an app whose Dart no longer mentions it.
+        self.apply(self.config())
+        self.apply(self.config(push_enabled=False))
+        self.assertFalse(
+            (self.project / "android" / "app" / "google-services.json").exists()
+        )
+        self.assertNotIn(GOOGLE_SERVICES_ID, self.settings())
+        self.assertNotIn(GOOGLE_SERVICES_ID, self.app_gradle())
+
+    def test_a_package_changed_after_upload_stops_the_build(self):
+        # The check the upload already made, made again - because the package
+        # id is editable afterwards and the result would be an app that
+        # installs and silently never receives anything.
+        with self.assertRaises(CissyError) as caught:
+            self.apply(self.config(android_package_id="com.jokeb.renamed"))
+        self.assertIn("com.jokeb.mobile", str(caught.exception))
+        self.assertIn("com.jokeb.renamed", str(caught.exception))
+
+    def test_push_on_with_no_file_stops_the_build(self):
+        with self.assertRaises(CissyError) as caught:
+            self.apply(self.config(firebase_android_file=None))
+        self.assertIn("google-services.json", str(caught.exception))
+
+    def test_an_unrecognisable_gradle_file_is_reported_not_guessed_at(self):
+        # A silent no-op here produces an app that builds and installs and
+        # receives nothing, which is the whole failure this path prevents.
+        (self.project / "android" / "settings.gradle.kts").write_text(
+            "// nothing like a plugins block\n", encoding="utf-8"
+        )
+        with self.assertRaises(CissyError) as caught:
+            self.apply(self.config())
+        self.assertIn("settings.gradle.kts", str(caught.exception))
+
+    def test_no_ios_file_is_not_an_error(self):
+        self.apply(self.config())
+        self.assertTrue(any("Android app is unaffected" in line
+                            for line in self.logged))
+
+
+class IosPushTest(unittest.TestCase):
+    """The iOS half: Info.plist and the entitlements file.
+
+    project.pbxproj is deliberately not touched. Adding the capability there
+    means writing a format with no public specification, and getting it wrong
+    fails in Xcode on the customer's Mac where we cannot see it. One checkbox,
+    done by the person who already has Xcode open, is the reliable answer.
+    """
+
+    PLIST = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<plist version="1.0">\n<dict>\n'
+        "\t<key>CFBundleName</key>\n\t<string>probe</string>\n"
+        "</dict>\n</plist>"
+    )
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        (self.tmp / "ios" / "Runner").mkdir(parents=True)
+        (self.tmp / "ios" / "Runner" / "Info.plist").write_text(
+            self.PLIST, encoding="utf-8"
+        )
+
+    def config(self, **overrides) -> AppConfig:
+        base = dict(
+            id="jokeb", name="Jokeb", website_url="https://jokeb.example",
+            android_package_id="com.jokeb.mobile",
+            ios_bundle_id="com.jokeb.mobile",
+        )
+        base.update(overrides)
+        return AppConfig(**base)
+
+    def patch(self, config):
+        _patch_info_plist(self.tmp, config, lambda line: None)
+
+    def plist(self) -> str:
+        return (self.tmp / "ios" / "Runner" / "Info.plist").read_text()
+
+    def entitlements(self) -> Path:
+        return self.tmp / "ios" / "Runner" / "Runner.entitlements"
+
+    def test_push_adds_the_background_mode(self):
+        self.patch(self.config(push_enabled=True))
+        self.assertIn("UIBackgroundModes", self.plist())
+        self.assertIn("remote-notification", self.plist())
+
+    def test_push_writes_the_entitlements_file(self):
+        self.patch(self.config(push_enabled=True))
+        self.assertIn("aps-environment", self.entitlements().read_text())
+
+    def test_no_push_means_neither(self):
+        self.patch(self.config())
+        self.assertNotIn("UIBackgroundModes", self.plist())
+        self.assertFalse(self.entitlements().exists())
+
+    def test_turning_push_off_takes_them_back_out(self):
+        # The scaffold survives between builds, so a leftover background mode
+        # would go on claiming the app wants waking.
+        self.patch(self.config(push_enabled=True))
+        self.patch(self.config(push_enabled=False))
+        self.assertNotIn("UIBackgroundModes", self.plist())
+        self.assertFalse(self.entitlements().exists())
+
+    def test_running_twice_does_not_duplicate_the_entry(self):
+        self.patch(self.config(push_enabled=True))
+        self.patch(self.config(push_enabled=True))
+        self.assertEqual(self.plist().count("UIBackgroundModes"), 1)
+
+    def test_the_rest_of_the_plist_survives(self):
+        self.patch(self.config(push_enabled=True))
+        self.patch(self.config(push_enabled=False))
+        self.assertIn("<key>CFBundleName</key>", self.plist())
+        self.assertIn("</dict>\n</plist>", self.plist())

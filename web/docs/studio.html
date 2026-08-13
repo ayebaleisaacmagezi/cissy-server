@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Studio and navigation - Web2App docs</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/docs/docs.css">
+</head>
+<body>
+<article>
+  <h1>Studio and navigation</h1>
+  <p class="lede">
+    Studio is where the app stops being a browser pointed at your site and
+    starts being an app. Theme, native modules, and a bottom navigation bar
+    that belongs to the app rather than to the page.
+  </p>
+
+  <h2>Theme colour</h2>
+  <p>
+    One colour, and the whole app is built from it - buttons, the active tab,
+    highlights, the loading bar. Use your brand colour, the one your website
+    already uses. Leave it empty and the app uses a neutral grey, which looks
+    deliberate rather than half-finished.
+  </p>
+  <p>
+    This colours the app's own furniture only. Your website keeps whatever
+    colours it has.
+  </p>
+
+  <h2>Modules</h2>
+  <p>
+    Each one is a piece of native behaviour wrapped around the page. Only turn
+    on what you will use: several of them add a permission, and an app that asks
+    for the camera without ever using it is a bad first impression and a common
+    App Store rejection.
+  </p>
+  <table>
+    <thead><tr><th>Module</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td>File upload</td><td>Lets your site open the phone's file picker. Without it, file inputs on your pages are disabled.</td></tr>
+      <tr><td>Downloads</td><td>Files your site serves are saved to the phone and can be opened. Adds a Downloads screen.</td></tr>
+      <tr><td>Native sharing</td><td>The phone's own share sheet, so a page can be sent to WhatsApp or anywhere else.</td></tr>
+      <tr><td>Pull to refresh</td><td>Swipe down at the top of a page to reload it.</td></tr>
+      <tr><td>Camera</td><td>Lets the site use the camera for uploads. Adds a camera permission prompt.</td></tr>
+      <tr><td>Location</td><td>Lets the site ask where the phone is. Adds a location permission prompt.</td></tr>
+      <tr><td>Deep links</td><td>Links to your domain open your app instead of the browser. See below.</td></tr>
+      <tr><td>Saved items</td><td>Bookmarks and recently viewed pages, kept on the phone so they work offline.</td></tr>
+      <tr><td>Settings screen</td><td>A native page with clear cache, an about section, and a link to open the site in a browser.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note info">
+    <b>Permissions come with an explanation</b>
+    <p>
+      Camera and location both need a sentence saying what they are for, shown
+      by iOS in the system prompt. Web2App writes a sensible one naming your app;
+      you can replace it on the Features page. Apple rejects builds where the
+      reason is vague, so make it specific to what your site actually does.
+    </p>
+  </div>
+
+  <h2>Native navigation</h2>
+  <p>
+    A bottom bar drawn by the app, with between two and five tabs. Each tab can
+    open a page of your website or one of the native screens.
+  </p>
+  <p>
+    Each tab keeps its own page loaded. Switching between them is instant and
+    does not reload anything or lose your place on a long page - which is the
+    main reason a native bar feels better than the one on your site.
+  </p>
+
+  <h3>What a tab can open</h3>
+  <ul>
+    <li><b>Your website's home page</b></li>
+    <li><b>A page of your site</b> - a path like <code>/shop</code>, or a full address</li>
+    <li><b>Saved</b>, <b>Downloads</b>, <b>Settings</b> or <b>Notifications</b> - native screens, each needing its module switched on</li>
+  </ul>
+  <p>
+    At least one tab has to open the website. A bar made entirely of native
+    screens would be an app with no content in it, so that is refused.
+  </p>
+
+  <h3>Keeping the right tab lit</h3>
+  <p>
+    A tab lights up when the page on screen is one of its pages. That works
+    without configuration for the tab's own path, but people reach pages by
+    tapping links inside your site, and those pages may belong to a different
+    tab.
+  </p>
+  <p>
+    So each tab can list other paths that also light it up. An Account tab
+    pointing at <code>/account</code> might also claim <code>/profile</code> and
+    <code>/orders</code>. Press <b>Also…</b> on the tab to add them.
+  </p>
+  <div class="note">
+    <b>Lighting up is not switching</b>
+    <p>
+      When someone follows a link from Home to <code>/orders</code>, the Account
+      tab lights up so the bar tells the truth about where they are - but they
+      stay in the Home tab, on the page they opened. Tapping the lit tab then
+      takes them to that tab's own page. That is deliberate: moving them
+      sideways mid-journey would lose the page they were reading.
+    </p>
+  </div>
+
+  <div class="note warn">
+    <b>If you turn this on, hide your site's own bar</b>
+    <p>
+      Otherwise the phone shows two navigation bars stacked, costing about a
+      fifth of the screen and offering the same destinations twice.
+      <a href="/docs/website-navigation">Hiding your site's navigation</a> covers
+      how.
+    </p>
+  </div>
+
+  <h2>Deep links</h2>
+  <p>
+    With the Deep links module on, a link to your domain opens your app rather
+    than the browser, when the app is installed. Somebody sends a friend a
+    product link in a message; the friend taps it and lands on that product,
+    inside the app.
+  </p>
+  <p>
+    On Android this needs one extra step on your side: a file at
+    <code>https://yourdomain/.well-known/assetlinks.json</code> that names your
+    package and your signing key's fingerprint. Without it Android cannot
+    confirm the app and the site belong to the same person, and it will keep
+    opening the browser. The Features page shows you the exact file to publish.
+  </p>
+
+  <h2>The preview</h2>
+  <p>
+    The phone in the middle of Studio loads your real website at a real handset
+    width, so what you see is what the app will show. If it stays blank, your
+    site is sending a header that refuses to be displayed inside another page -
+    a security setting that affects this preview only. The built app is
+    unaffected.
+  </p>
+</article>
+<script src="/docs/docs.js"></script>
+</body>
+</html>

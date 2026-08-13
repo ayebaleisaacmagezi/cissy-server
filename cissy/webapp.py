@@ -33,7 +33,7 @@ from .signing import SigningCredentials
 from .sms import DemoSms, build_sender, verification_message
 from .store import ProjectStore, Workspaces
 from . import accounts as accounts_mod
-from . import generate, toolchain
+from . import firebase, generate, pushdocs, toolchain
 
 # Windows' MIME registry predates WebP; without this the logos are served as
 # application/octet-stream.
@@ -247,6 +247,7 @@ class Application:
         add("GET", "/api/apps/<app_id>/files/<slot>", self.get_file)
         add("PUT", "/api/apps/<app_id>/files/<slot>", self.upload_file)
         add("DELETE", "/api/apps/<app_id>/files/<slot>", self.remove_file)
+        add("GET", "/api/apps/<app_id>/push-docs", self.push_docs)
         add("POST", "/api/apps/<app_id>/generate", self.generate_only)
         add("POST", "/api/apps/<app_id>/build", self.start_build)
         add("GET", "/api/apps/<app_id>/builds", self.list_builds)
@@ -513,7 +514,37 @@ class Application:
         payload["next_version_code"] = config.next_version_code(
             store.used_version_codes(config.id)
         )
+        payload["firebase"] = self._firebase_status(config, store)
         return payload
+
+    def _firebase_status(
+        self, config: AppConfig, store: ProjectStore
+    ) -> dict[str, Any]:
+        """What each uploaded Firebase file says, and whether it still fits.
+
+        Recomputed on every read rather than stored, because the thing it can
+        disagree with - the package name on the Identity page - is editable
+        after the upload. A stored "valid" would go on saying valid.
+        """
+        status: dict[str, Any] = {}
+        for slot, (platform, field) in self._FIREBASE_SLOTS.items():
+            name = getattr(config, self._SLOTS[slot][1])
+            if not name:
+                status[platform] = None
+                continue
+            path = store.assets_dir(config.id) / name
+            entry: dict[str, Any] = {"expected": getattr(config, field)}
+            try:
+                app = firebase.read(path.read_bytes(), platform)
+                entry["project_id"] = app.project_id
+                entry["identifiers"] = list(app.identifiers)
+                firebase.check(app, getattr(config, field))
+                entry["ok"] = True
+            except (OSError, CissyError) as error:
+                entry["ok"] = False
+                entry["problem"] = str(error)
+            status[platform] = entry
+        return status
 
     # ── files ────────────────────────────────────────────────────────────
 
@@ -524,6 +555,15 @@ class Application:
         "icon": ({".png"}, "icon_file"),
         "splash": ({".png", ".jpg", ".jpeg"}, "splash_file"),
         "keystore": ({".jks", ".keystore", ".p12", ".pfx"}, "keystore_file"),
+        "firebase_android": ({".json"}, "firebase_android_file"),
+        "firebase_ios": ({".plist"}, "firebase_ios_file"),
+    }
+
+    # The two slots whose contents are read rather than merely stored: which
+    # platform the file is for, and the config field it has to agree with.
+    _FIREBASE_SLOTS = {
+        "firebase_android": (firebase.ANDROID, "android_package_id"),
+        "firebase_ios": (firebase.IOS, "ios_bundle_id"),
     }
 
     def upload_file(self, request: Request) -> dict[str, Any]:
@@ -543,6 +583,18 @@ class Application:
             )
         if not request.body:
             raise ValidationError("The uploaded file was empty.")
+
+        # A Firebase file is read before it is kept. Storing one that belongs
+        # to another app would produce a build that installs and then never
+        # receives a notification, with nothing anywhere saying why.
+        if slot in self._FIREBASE_SLOTS:
+            # Named apart from `field` above on purpose: that one is where the
+            # filename gets stored, this one is what the file has to agree
+            # with, and confusing them writes a filename into the package id.
+            platform, identity = self._FIREBASE_SLOTS[slot]
+            firebase.check(
+                firebase.read(request.body, platform), getattr(config, identity)
+            )
 
         # The stored name is derived, never taken from the client - a supplied
         # name reaches the filesystem, and "../../config.json" is a valid one.
@@ -601,6 +653,35 @@ class Application:
             # An alias without a keystore would read as "signed" everywhere.
             changes["key_alias"] = None
         return {"app": self._app_json(store.save(config.updated(**changes)), store)}
+
+    def push_docs(self, request: Request) -> dict[str, Any]:
+        """The customer's own integration guide, for one backend stack.
+
+        The project id comes from the uploaded configuration file rather than
+        from anything typed in, so the guide cannot quietly describe a project
+        the app is not actually built against.
+        """
+        store = request.workspace
+        config = store.get(request.params["app_id"])
+        stack = (request.query.get("stack") or ["node"])[0]
+
+        project_id = ""
+        name = config.firebase_android_file
+        if name:
+            path = store.assets_dir(config.id) / name
+            try:
+                project_id = firebase.read(
+                    path.read_bytes(), firebase.ANDROID
+                ).project_id
+            except (OSError, CissyError):
+                project_id = ""
+
+        guide = pushdocs.render(config, project_id or "your-project-id", stack)
+        return {
+            "stacks": pushdocs.stacks(),
+            "guide": guide.to_json(),
+            "configured": bool(project_id),
+        }
 
     # ── builds ───────────────────────────────────────────────────────────
 
@@ -959,6 +1040,17 @@ class Application:
             candidate.relative_to(self.web_dir.resolve())
         except ValueError:
             return None
+
+        # Two narrow rules, for the documentation only. Not the blanket
+        # fallback warned about above: both require a file that actually
+        # exists, so a typo is still a 404 rather than a page pretending to
+        # work. They exist so docs URLs read as /docs/notifications rather
+        # than /docs/notifications.html, which is what anybody links to.
+        if candidate.is_dir():
+            candidate = candidate / "index.html"
+        elif not candidate.is_file() and not candidate.suffix:
+            candidate = candidate.with_suffix(".html")
+
         if not candidate.is_file():
             return None
         kind, _ = mimetypes.guess_type(candidate.name)

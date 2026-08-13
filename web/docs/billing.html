@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Plans and billing - Web2App docs</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/docs/docs.css">
+</head>
+<body>
+<article>
+  <h1>Plans and billing</h1>
+  <p class="lede">
+    Plans are measured in builds, because a build is the only thing here that
+    costs real machine time. Everything else - editing, previewing, downloading
+    what you already built - is unlimited.
+  </p>
+
+  <h2>The plans</h2>
+  <table>
+    <thead><tr><th>Plan</th><th>Builds a month</th><th>Price</th></tr></thead>
+    <tbody>
+      <tr><td>Starter</td><td>25</td><td>UGX 19,000</td></tr>
+      <tr><td>Business</td><td>100</td><td>UGX 57,000</td></tr>
+    </tbody>
+  </table>
+  <p>
+    Both cover as many apps as you like. The allowance is builds, not apps, so
+    an agency running six client apps that each ship rarely may well fit in
+    Starter.
+  </p>
+  <div class="note info">
+    <b>25 builds is more than it sounds</b>
+    <p>
+      Remember that content changes need no build at all - your app loads your
+      live site. You build when the app itself changes, which for most people is
+      a burst during setup and then occasionally.
+    </p>
+  </div>
+
+  <h2>Paying</h2>
+  <p>
+    Mobile money. Open <b>Billing</b>, choose a plan, enter the number to charge,
+    and press pay. A prompt appears on that handset; enter your PIN and the plan
+    activates.
+  </p>
+  <p>
+    There is no card form and no redirect to another site. You never leave
+    Web2App, and no card details exist anywhere in this product.
+  </p>
+
+  <h3>What the screen is doing while you wait</h3>
+  <p>
+    Mobile money has no way to tell us the moment you approve, so the server
+    asks the network repeatedly until it has an answer. That is why the screen
+    waits rather than jumping straight to a result.
+  </p>
+  <div class="note ok">
+    <b>You can close the tab</b>
+    <p>
+      The server keeps chasing a payment on its own. Approve the prompt after
+      shutting your laptop and the plan still activates. It survives a restart
+      of the server too - every payment is written to disk before the network is
+      even called, so nothing is only in memory.
+    </p>
+  </div>
+
+  <h3>If the prompt never arrives</h3>
+  <p>
+    Check the number, and check the line has mobile money active. An unanswered
+    prompt is marked abandoned rather than failed, because nothing was charged -
+    you can simply start again.
+  </p>
+
+  <h3>If you were charged but nothing activated</h3>
+  <p>
+    Rare, and recoverable. Every payment has a reference kept from before the
+    network was contacted, so there is always a thread back to the money. Get in
+    touch with the number and the approximate time.
+  </p>
+  <p>
+    Anything the server cannot interpret - a timeout, a dropped connection, an
+    answer it does not recognise - is treated as still pending, never as
+    failure. Reading an unclear answer as failure is how a system keeps somebody's
+    money and gives them nothing.
+  </p>
+
+  <h2>When the allowance runs out</h2>
+  <p>
+    Builds stop. Your apps, settings and previously built artifacts stay exactly
+    where they are - you can still download anything you built earlier, and your
+    published apps are entirely unaffected. They are on Google Play, not here.
+  </p>
+
+  <h2>What happens to your work</h2>
+  <p>
+    Your published apps belong to you, signed with your key, on your developer
+    account, loading your website. Nothing about them depends on this service
+    continuing to exist. If you stop paying, or we stop existing, your apps go
+    on working and your notifications go on arriving.
+  </p>
+  <p>
+    You can also download the complete Flutter project at any time, on any plan.
+    It is a standard project that any Flutter developer can build. There is no
+    lock-in to be trapped by.
+  </p>
+</article>
+<script src="/docs/docs.js"></script>
+</body>
+</html>

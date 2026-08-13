@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Documentation - Web2App</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/docs/docs.css">
+</head>
+<body>
+<article>
+  <h1>Documentation</h1>
+  <p class="lede">
+    Web2App turns your website into an Android and iPhone app, and wraps a real
+    native layer around it - navigation, notifications, downloads, sharing, an
+    offline screen. You keep your website, your Firebase project, your
+    developer accounts and your backend.
+  </p>
+
+  <h2>What it is</h2>
+  <p>
+    You give it a URL, a name, an icon and a colour. It generates a Flutter
+    project, builds it, and hands you a signed Android app you can upload to
+    Google Play. For iPhone it hands you the complete project as a
+    <code>.zip</code>, because Apple's build tools only run on macOS.
+  </p>
+  <p>
+    The website stays yours and stays live. Nothing is copied, scraped or
+    frozen - the app loads your real site, so a change you publish is a change
+    your app users see immediately, with no new release.
+  </p>
+
+  <h2>What it is not</h2>
+  <ul>
+    <li>
+      It is not a website builder. You bring a site that already works on a
+      phone.
+    </li>
+    <li>
+      It does not host anything. Your site stays wherever it is now.
+    </li>
+    <li>
+      It does not sit between your server and your users. Notifications go from
+      your backend to Firebase to the phone; Web2App is not in that path and
+      does not need to be running.
+    </li>
+    <li>
+      It never asks for your Google or Apple password.
+    </li>
+  </ul>
+
+  <div class="note info">
+    <b>Two accounts you will need, and they are yours</b>
+    <p>
+      A Google Play developer account to publish on Android, and an Apple
+      Developer account for iPhone. Both are registered in your name, both are
+      paid to Google and Apple directly, and if you ever stop using Web2App
+      your apps and your listings stay with you.
+    </p>
+  </div>
+
+  <div id="contents"></div>
+</article>
+<script src="/docs/docs.js"></script>
+</body>
+</html>

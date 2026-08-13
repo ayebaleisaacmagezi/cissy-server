@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Publishing - Web2App docs</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/docs/docs.css">
+</head>
+<body>
+<article>
+  <h1>Publishing</h1>
+  <p class="lede">
+    Getting the app into Google Play, and building the iPhone version on a Mac.
+  </p>
+
+  <h2>Google Play</h2>
+  <ol class="steps">
+    <li>
+      <b>Create a Play developer account</b>
+      A one-off fee, paid to Google, in your own name. Identity verification
+      takes a few days, so start it before you are ready to ship.
+    </li>
+    <li>
+      <b>Build an AAB</b>
+      Google Play does not accept APKs for new apps. Choose AAB on the Build
+      page.
+    </li>
+    <li>
+      <b>Create the app in the Play Console</b>
+      Use the same package name as your Identity page. This cannot be changed
+      afterwards.
+    </li>
+    <li>
+      <b>Fill in the store listing</b>
+      Title, short and full description, screenshots, a feature graphic, a
+      privacy policy URL, and the content rating questionnaire. This is usually
+      the slowest part, and none of it is technical.
+    </li>
+    <li>
+      <b>Upload the AAB and roll out</b>
+      Start with internal testing to check it installs and runs from the store,
+      then promote it to production.
+    </li>
+  </ol>
+
+  <div class="note warn">
+    <b>Two things that get web-wrapper apps rejected</b>
+    <p>
+      Google's policy is against apps that are only a website with no added
+      value. An app that offers native navigation, notifications, offline
+      handling, downloads and sharing is not that - but it helps to say so in
+      the listing, and to have those features actually switched on.
+    </p>
+    <p>
+      The other is permissions you do not use. If Camera or Location are on but
+      your site never uses them, turn them off before you publish.
+    </p>
+  </div>
+
+  <h2>Updating</h2>
+  <p>
+    Remember that content changes need no release at all. Your app loads your
+    live site, so publishing a page is publishing it to every installed app.
+  </p>
+  <p>
+    You only need a new build and a new upload when the app itself changes - the
+    icon, navigation, modules, name, or a notification setting. Build, check the
+    version code went up, upload, roll out.
+  </p>
+
+  <h2>iPhone</h2>
+  <p>
+    Apple's build tools only run on macOS, so the iPhone app cannot be built
+    here. What you get instead is the complete Flutter project as a
+    <code>.zip</code>, ready to open on a Mac.
+  </p>
+  <ol class="steps">
+    <li>
+      <b>Download the project zip</b>
+      From the Build page. It is a couple of megabytes.
+    </li>
+    <li>
+      <b>Open it on a Mac with Xcode and Flutter installed</b>
+      Run <code>flutter pub get</code> in the project folder, then open the
+      <code>ios</code> folder in Xcode.
+    </li>
+    <li>
+      <b>Set your signing team</b>
+      Select the Runner target, then Signing &amp; Capabilities. Xcode handles
+      certificates and provisioning from there.
+    </li>
+    <li>
+      <b>Add Push Notifications</b>
+      Only if you are using notifications. Same screen, press + Capability. See
+      <a href="/docs/notifications-ios">iPhone and APNs</a>.
+    </li>
+    <li>
+      <b>Archive and upload to App Store Connect</b>
+      Product → Archive, then Distribute App. From there it is Apple's review
+      process, which takes anywhere from a day to a week.
+    </li>
+  </ol>
+  <div class="note info">
+    <b>The zip carries no signing configuration</b>
+    <p>
+      No certificates, no provisioning profiles, no keystore and no passwords.
+      Apple signing belongs to your developer account on your Mac, and putting
+      any of it in a downloadable file would be a mistake.
+    </p>
+  </div>
+
+  <h2>Do not have a Mac?</h2>
+  <p>
+    The project is a standard Flutter project, so anything that builds Flutter
+    for iOS will build it - a rented Mac by the hour, a hosted CI service with
+    macOS runners, or a friend with a MacBook and an afternoon. You still need
+    your own Apple Developer account, because the app is published in your name.
+  </p>
+
+  <h2>Both stores</h2>
+  <p>
+    Keep the version name the same across both so a support conversation about
+    "version 1.4" means one thing. The version code and Apple's build number are
+    separate counters and do not need to agree.
+  </p>
+</article>
+<script src="/docs/docs.js"></script>
+</body>
+</html>

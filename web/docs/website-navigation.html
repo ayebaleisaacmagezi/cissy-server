@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hiding your site's navigation - Web2App docs</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/docs/docs.css">
+</head>
+<body>
+<article>
+  <h1>Hiding your site's navigation</h1>
+  <p class="lede">
+    If the app draws a native bottom bar and your website draws its own, the
+    phone shows two. This is how you take one of them down.
+  </p>
+
+  <h2>Why it happens</h2>
+  <p>
+    The app renders your website exactly as a mobile browser would, including
+    the navigation bar your site draws at the bottom of its own pages. The
+    native bar is drawn by the app, outside the page, underneath it. Neither one
+    knows the other exists.
+  </p>
+  <p>The result costs more than screen space:</p>
+  <ul>
+    <li>
+      <b>About a fifth of the screen, permanently.</b> A bottom bar is roughly
+      56 points. Two of them is 110 to 120 out of a phone's 640 or so of usable
+      height, gone on every page.
+    </li>
+    <li>
+      <b>The same destinations twice.</b> Home and Shop in both bars is four
+      ways to reach two places, stacked.
+    </li>
+    <li>
+      <b>They disagree.</b> Your site highlights based on the page it is
+      showing; the native bar highlights based on the tab last tapped. After an
+      in-page link they say different things.
+    </li>
+    <li>
+      <b>They behave differently.</b> Your site's Shop navigates inside the page
+      the user is on. The native Shop switches to a different tab. Two identical
+      looking controls, one above the other, doing different things - that is
+      the part that reads as broken rather than crowded.
+    </li>
+  </ul>
+
+  <div class="note">
+    <b>None of this applies if you are not using native navigation</b>
+    <p>
+      An app that uses your website's own navigation has one bar and is fine as
+      it is. This page is only for apps with a native bottom bar.
+    </p>
+  </div>
+
+  <h2>Three ways, in the Studio</h2>
+  <p>
+    Open <b>Studio</b> and find the <b>Website navigation</b> card. You can use
+    any of these, or more than one.
+  </p>
+
+  <h3>1. Hide elements by CSS selector</h3>
+  <p>
+    Write the selector the way you would in a stylesheet, and the app hides what
+    it matches:
+  </p>
+  <pre><code>.mobile-bottom-nav
+#site-header .menu
+footer.nav</code></pre>
+  <p>
+    Selectors only - no braces, no rule body. The app writes the rule for you.
+    The preview in Studio shows the result on your real site immediately, so you
+    can tell straight away whether you have pointed at the right thing.
+  </p>
+  <p>
+    <b>Works on any site</b>, including one you cannot edit.
+    <b>Breaks silently if the site is redesigned</b> - if a class name changes,
+    the selector stops matching and the bar comes back. Check after a redesign.
+  </p>
+
+  <h3>2. Add a class to the page</h3>
+  <p>
+    The app adds a class to <code>&lt;body&gt;</code>, and you write the rule in
+    your own stylesheet:
+  </p>
+  <pre><code><span class="c">/* in your site's CSS */</span>
+body.web2app-native .site-bottom-nav {
+  display: none;
+}</code></pre>
+  <p>
+    In a normal browser nothing changes. Inside the app the class is there and
+    your rule applies. This is the best option if you control your site's CSS:
+    the rule lives next to the thing it hides, so a redesign that renames the
+    bar renames it in both places at once.
+  </p>
+  <p>
+    It also lets you do more than hide. You can widen a container, remove
+    bottom padding that existed to clear the bar, or show something only app
+    users see.
+  </p>
+
+  <h3>3. A flag on the entry URL</h3>
+  <p>
+    The app can add something like <code>source=web2app</code> to the address it
+    opens, so your server can render a different layout from the start.
+  </p>
+  <div class="note warn">
+    <b>This one is weaker than it looks</b>
+    <p>
+      The flag is on the first address only. As soon as somebody taps a link
+      inside your site it is gone, because rewriting every link would break your
+      site's own routing. Treat it as a hint about how a visit started, not as a
+      reliable signal. If you want something that lasts the whole session, set a
+      cookie from your server the first time you see the flag.
+    </p>
+  </div>
+
+  <h2>Which to choose</h2>
+  <table>
+    <thead><tr><th>Method</th><th>Good at</th><th>Weak at</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>CSS selector</td>
+        <td>Works anywhere, no site changes, instant.</td>
+        <td>Breaks quietly when the site is redesigned.</td>
+      </tr>
+      <tr>
+        <td>Body class</td>
+        <td>Survives redesigns; can do more than hide.</td>
+        <td>You need to be able to edit your site's CSS.</td>
+      </tr>
+      <tr>
+        <td>URL flag</td>
+        <td>Your server decides; can change the whole page.</td>
+        <td>Only reaches the first page of a visit.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>Where it applies</h2>
+  <p>
+    Only on your allowed domains. If somebody follows a link to another site and
+    it opens inside the app, none of this touches that page - the app does not
+    restyle pages that are not yours.
+  </p>
+  <p>
+    The hiding is applied before the page draws, so your bar does not appear and
+    then vanish. It is re-applied when a page changes without a full reload, so
+    single-page sites stay covered too.
+  </p>
+</article>
+<script src="/docs/docs.js"></script>
+</body>
+</html>

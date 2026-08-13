@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>iPhone and APNs - Web2App docs</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/docs/docs.css">
+</head>
+<body>
+<article>
+  <h1>iPhone and APNs</h1>
+  <p class="lede">
+    Firebase delivers to iPhones through Apple's own push service, so there is
+    one extra connection to make: Firebase has to be allowed to send on your
+    behalf.
+  </p>
+
+  <div class="note info">
+    <b>You can skip this entirely for now</b>
+    <p>
+      None of it affects Android. If you are launching on Android first, leave
+      this until you come to the iPhone version - your Android notifications
+      work without any of it.
+    </p>
+  </div>
+
+  <h2>What you need</h2>
+  <ul>
+    <li>A paid Apple Developer account, in your own name.</li>
+    <li>A Mac, to build the iPhone app. Apple's tools do not run anywhere else.</li>
+    <li>A physical iPhone. Push notifications do not work in the simulator.</li>
+  </ul>
+
+  <h2>Add the iOS app to Firebase</h2>
+  <ol class="steps">
+    <li>
+      <b>Add an iOS app to your existing project</b>
+      The same Firebase project as Android. Do not make a second one.
+    </li>
+    <li>
+      <b>Use the exact bundle ID</b>
+      Copy it from the Notifications page. It is usually the same string as your
+      Android package name, but Firebase treats them as separate apps.
+    </li>
+    <li>
+      <b>Download <code>GoogleService-Info.plist</code> and upload it</b>
+      On the Notifications page. Web2App checks it against your bundle ID, the
+      same way it checks the Android file.
+    </li>
+  </ol>
+
+  <h2>Create the Apple push key</h2>
+  <p>
+    This is the credential that lets Firebase hand messages to Apple. One key
+    works for all your apps and it does not expire.
+  </p>
+  <ol class="steps">
+    <li>
+      <b>Open the Apple Developer site</b>
+      Go to Certificates, Identifiers &amp; Profiles, then <b>Keys</b>.
+    </li>
+    <li>
+      <b>Create a key with Apple Push Notifications service enabled</b>
+      Give it a name you will recognise later.
+    </li>
+    <li>
+      <b>Download the <code>.p8</code> file</b>
+      <div class="note stop" style="margin-top:10px">
+        <b>You can only download it once</b>
+        <p>
+          Apple will not let you download it again. Save it somewhere you will
+          still have it in two years. If you lose it, you revoke it and make a
+          new one.
+        </p>
+      </div>
+    </li>
+    <li>
+      <b>Note the Key ID and your Team ID</b>
+      The Key ID is shown next to the key. The Team ID is in the top right of
+      the developer site, and in Membership.
+    </li>
+    <li>
+      <b>Upload it to Firebase</b>
+      In your Firebase project: <b>Project settings</b> → <b>Cloud Messaging</b>
+      → your iOS app → <b>APNs Authentication Key</b>. Upload the
+      <code>.p8</code> and enter the Key ID and Team ID.
+    </li>
+  </ol>
+
+  <div class="note ok">
+    <b>The key goes to Firebase, not to us</b>
+    <p>
+      Web2App never asks for the <code>.p8</code>, never stores it and has no
+      use for it. It is a credential that can send notifications to your users,
+      and the fewer places it exists the better. Upload it straight to Firebase.
+    </p>
+  </div>
+
+  <h2>On the Mac</h2>
+  <p>
+    Download the project <code>.zip</code> from the Build page and open the
+    <code>ios</code> folder in Xcode. Two things to do there:
+  </p>
+  <ol class="steps">
+    <li>
+      <b>Add the Push Notifications capability</b>
+      Select the Runner target, open <b>Signing &amp; Capabilities</b>, press
+      <b>+ Capability</b> and add <b>Push Notifications</b>. This is one
+      checkbox, and it is the only part of iOS setup that has to happen in
+      Xcode rather than here.
+      <div class="note" style="margin-top:10px">
+        <b>Why this is not done for you</b>
+        <p>
+          It is recorded in Xcode's own project file, in a format with no public
+          specification. Editing that from a server is the kind of change that
+          works until Apple alters the format and then fails on your Mac, where
+          we cannot see it. One checkbox, done by the person who already has
+          Xcode open, is the more reliable answer.
+        </p>
+      </div>
+    </li>
+    <li>
+      <b>Set your signing team</b>
+      Same screen. Xcode handles the certificates from there.
+    </li>
+    <li>
+      <b>Build to a real iPhone and test</b>
+      Send yourself a message from Firebase's composer. Notifications do not
+      work in the simulator, so this has to be a physical device.
+    </li>
+  </ol>
+
+  <h2>If nothing arrives on iPhone</h2>
+  <ul>
+    <li>Is the Push Notifications capability actually added in Xcode?</li>
+    <li>Is the APNs key uploaded in Firebase, against the right iOS app?</li>
+    <li>Is the bundle ID in Xcode identical to the one in Firebase?</li>
+    <li>Are you testing on a real device rather than the simulator?</li>
+    <li>Did you accept the permission prompt?</li>
+  </ul>
+  <p>
+    Android and iPhone fail independently here. Android arriving tells you the
+    Firebase project and your sending code are right, which usually narrows an
+    iPhone problem down to the APNs key or the Xcode capability.
+  </p>
+</article>
+<script src="/docs/docs.js"></script>
+</body>
+</html>

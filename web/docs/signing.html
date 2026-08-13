@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Signing keys - Web2App docs</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/docs/docs.css">
+</head>
+<body>
+<article>
+  <h1>Signing keys</h1>
+  <p class="lede">
+    A signing key is what proves an update came from the same person as the
+    original. Android will not accept an app without one, and it will not accept
+    an update signed by a different one.
+  </p>
+
+  <div class="note stop">
+    <b>Read this before you make one</b>
+    <p>
+      If you lose your signing key, you cannot update your app. Not "it is
+      difficult" - you cannot. Google will not reset it and there is no appeal.
+      Your only option is publishing a new listing under a new package name,
+      starting from zero installs and zero reviews, and asking everybody to
+      install the new one.
+    </p>
+    <p>
+      Back it up somewhere that is not your laptop, on the day you make it.
+    </p>
+  </div>
+
+  <h2>Making one</h2>
+  <p>
+    A key lives in a keystore file. If you have Java installed, this makes one:
+  </p>
+  <pre><code>keytool -genkey -v \
+  -keystore my-app.jks \
+  -alias my-app \
+  -keyalg RSA -keysize 2048 \
+  -validity 10000</code></pre>
+  <p>
+    It asks for a password and a few details about you. Twenty-seven years of
+    validity sounds absurd; it is the normal recommendation, because an expired
+    key has the same consequence as a lost one.
+  </p>
+  <p>Keep three things together, and safe:</p>
+  <ul>
+    <li>The <code>.jks</code> file</li>
+    <li>The keystore password</li>
+    <li>The key alias and its password</li>
+  </ul>
+
+  <h2>Uploading it</h2>
+  <p>
+    On the <b>Signing</b> page, upload the keystore and enter the alias. That is
+    all that gets stored.
+  </p>
+  <div class="note info">
+    <b>Passwords are not stored here</b>
+    <p>
+      You type them each time you build. They are used to write a temporary file
+      that the Android build reads, and that file is deleted as soon as the
+      build finishes. Passwords are never written into your project settings,
+      never included in any download, and never logged.
+    </p>
+    <p>
+      The keystore file itself is stored, because the build needs it. Without a
+      password it cannot be used.
+    </p>
+  </div>
+
+  <h2>What gets signed</h2>
+  <p>
+    Both the APK and the AAB, with the same key. An app signed with a
+    development key installs on a phone but Google Play will refuse it, which is
+    a slow way to discover the problem - the upload fails after both the build
+    and the upload have been waited through.
+  </p>
+  <p>
+    If Web2App cannot recognise the Android build file well enough to add your
+    signing configuration, it stops the build and says so. Quietly producing a
+    debug-signed file that looks like a release is the worst available outcome,
+    so it is not one of the options.
+  </p>
+
+  <h2>Play App Signing</h2>
+  <p>
+    Google Play offers to hold a second key and re-sign your app itself. If you
+    opt in, the key you make here becomes your <em>upload</em> key - the one
+    that proves an upload is from you - and Google holds the key that phones
+    actually verify.
+  </p>
+  <p>
+    It is worth taking. An upload key <em>can</em> be reset by Google if you lose
+    it; the app signing key cannot. It turns the worst case from "start again
+    from zero" into a support request.
+  </p>
+
+  <h2>iPhone signing</h2>
+  <p>
+    Different mechanism entirely, and it does not happen here. Apple signing is
+    handled in Xcode on a Mac with your Apple Developer account, and the project
+    <code>.zip</code> carries no signing configuration at all - see
+    <a href="/docs/publishing">Publishing</a>.
+  </p>
+
+  <h2>Backing it up</h2>
+  <p>Somewhere that survives losing your computer:</p>
+  <ul>
+    <li>A password manager - most will store a file alongside the passwords.</li>
+    <li>An encrypted archive in cloud storage.</li>
+    <li>A printed copy of the passwords somewhere physically safe.</li>
+  </ul>
+  <p>
+    Not in your git repository, and not in an email to yourself. The file plus
+    the password is complete control of your app's identity.
+  </p>
+</article>
+<script src="/docs/docs.js"></script>
+</body>
+</html>

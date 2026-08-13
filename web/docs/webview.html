@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>The website - Web2App docs</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/docs/docs.css">
+</head>
+<body>
+<article>
+  <h1>The website</h1>
+  <p class="lede">
+    Your site is the content of the app. These settings decide which pages the
+    app will show, what happens to links that lead elsewhere, and how strict it
+    is about security.
+  </p>
+
+  <h2>Allowed domains</h2>
+  <p>
+    The list of hosts the app treats as yours. It is filled in from your website
+    address when you create the app, and a link to any host on this list opens
+    inside the app.
+  </p>
+  <p>
+    Subdomains are covered automatically: <code>example.com</code> also allows
+    <code>shop.example.com</code> and <code>accounts.example.com</code>. You only
+    need to add a separate entry for a genuinely different domain - a payment
+    provider on its own address, or a second brand.
+  </p>
+  <div class="note warn">
+    <b>Do not empty this list</b>
+    <p>
+      With no allowed domains the app treats every page as external, including
+      your own, and pushes people out into their browser. If you want an app
+      that can go anywhere, leave your domain here and set external links to
+      open in the app instead.
+    </p>
+  </div>
+
+  <h2>External links</h2>
+  <p>
+    What happens when someone taps a link to a host that is not on your list.
+    Three choices:
+  </p>
+  <table>
+    <thead><tr><th>Setting</th><th>What happens</th><th>When to use it</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Open in browser</td>
+        <td>The phone's browser opens the link. The app stays where it was.</td>
+        <td>
+          The default, and right for almost everyone. People expect an outside
+          link to leave the app, and it keeps your app out of arguments about
+          somebody else's content.
+        </td>
+      </tr>
+      <tr>
+        <td>Stay in the app</td>
+        <td>The page loads inside the app, whatever the host.</td>
+        <td>
+          When your checkout or login genuinely lives on somebody else's domain
+          and sending people to a browser would lose their session.
+        </td>
+      </tr>
+      <tr>
+        <td>Block</td>
+        <td>Nothing loads, and a short message says the link was blocked.</td>
+        <td>
+          Apps for a closed audience where wandering off is not wanted at all -
+          a school portal, an internal tool.
+        </td>
+      </tr>
+    </tbody>
+  </table>
+  <p>
+    Links that are not web addresses always leave the app regardless of this
+    setting. A <code>tel:</code> link opens the dialler, a <code>mailto:</code>
+    link opens the mail app, and a map link opens maps. That is what people
+    expect and there is no reason to intercept it.
+  </p>
+
+  <h2>Require HTTPS</h2>
+  <p>
+    On by default, and worth leaving on. It refuses to load anything over plain
+    <code>http://</code>, which is the setting that stops an attacker on the same
+    wifi from rewriting your pages.
+  </p>
+  <p>
+    Turn it off only if your site genuinely has no certificate. If that is the
+    case, get one - they are free from Let's Encrypt, and modern browsers
+    already warn your visitors.
+  </p>
+
+  <h2>JavaScript, storage and cache</h2>
+  <ul>
+    <li>
+      <b>JavaScript</b> - on by default. Almost every site needs it; turning it
+      off is for the rare content-only site and it will break most others.
+    </li>
+    <li>
+      <b>DOM storage</b> - on by default. This is where sites keep sessions,
+      carts and preferences. Turning it off logs people out constantly.
+    </li>
+    <li>
+      <b>Cache</b> - on by default. Pages the phone has already loaded come back
+      faster and cost less data.
+    </li>
+  </ul>
+
+  <h2>Custom user agent</h2>
+  <p>
+    Optional. Whatever you put here is sent with every request the app makes, so
+    your server can tell app traffic from browser traffic - useful for analytics,
+    or for serving a slightly different layout. Leave it empty and the app sends
+    the standard WebView user agent.
+  </p>
+
+  <h2>What the app adds around the page</h2>
+  <p>
+    The website is not left to fend for itself. Depending on which modules you
+    enable in <a href="/docs/studio">Studio</a>, the app also handles file
+    uploads, downloads, sharing, pull to refresh, deep links, and a native
+    offline screen when the connection goes. Those are covered on their own
+    pages.
+  </p>
+</article>
+<script src="/docs/docs.js"></script>
+</body>
+</html>

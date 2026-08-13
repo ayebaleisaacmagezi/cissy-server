@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Building - Web2App docs</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/docs/docs.css">
+</head>
+<body>
+<article>
+  <h1>Building</h1>
+  <p class="lede">
+    Turning your settings into an installable app. A few minutes, streamed live,
+    and it carries on without you.
+  </p>
+
+  <h2>What a build does</h2>
+  <p>
+    It generates a complete Flutter project from your settings, then compiles
+    it. The project is kept between builds, so the second build of an app is
+    considerably faster than the first - the first one has to fetch the Android
+    toolchain and every package.
+  </p>
+  <p>
+    The log streams as it happens. You can close the tab, and you can come back
+    to a build in progress from another device; the build is running on the
+    server, not in your browser.
+  </p>
+
+  <h2>One at a time</h2>
+  <p>
+    A second build while one is running is refused with a clear message rather
+    than queued. Two Android builds at once on one machine mostly means both run
+    out of memory.
+  </p>
+
+  <h2>APK or AAB</h2>
+  <table>
+    <thead><tr><th></th><th>APK</th><th>AAB</th></tr></thead>
+    <tbody>
+      <tr><td>Install on a phone</td><td>Yes</td><td>No</td></tr>
+      <tr><td>Upload to Google Play</td><td>No</td><td>Yes</td></tr>
+      <tr><td>Use it for</td><td>Testing, and sending to people directly</td><td>Publishing</td></tr>
+    </tbody>
+  </table>
+  <p>
+    APK is the default because it is what you need first. When you are ready to
+    publish, build an AAB.
+  </p>
+  <p>
+    The APK is built only for the processor types real phones use, which keeps
+    it around a third smaller than one built for everything.
+  </p>
+
+  <h2>Version numbers</h2>
+  <p>Two of them, and they do different jobs.</p>
+  <ul>
+    <li>
+      <b>Version name</b> - what people see, like <code>1.4.0</code>. Yours to
+      choose.
+    </li>
+    <li>
+      <b>Version code</b> - a whole number Google Play uses to tell which build
+      is newer. It must go up with every upload.
+    </li>
+  </ul>
+  <p>
+    The version code is increased automatically before each build, and it clears
+    every code you have ever built under rather than just the last one - Play
+    rejects a reused code even if you edited the number downwards in between.
+    That rejection arrives after both the build and the upload have been waited
+    through, which is a slow way to learn.
+  </p>
+  <div class="note info">
+    <b>Moving an existing app across</b>
+    <p>
+      If your app is already on Play, set the version code by hand to match
+      what is published before your first build here. A newly created app leaves
+      a hand-set code alone until something has been built under it.
+    </p>
+  </div>
+
+  <h2>The drift warning</h2>
+  <p>
+    If you change settings after a build, the app tells you the artifact you can
+    download is older than the settings you are looking at. It is easy to change
+    an icon, forget to rebuild, and upload the previous file - and the resulting
+    confusion is hard to diagnose from the store's side.
+  </p>
+
+  <h2>Artifacts and downloads</h2>
+  <p>
+    Each build keeps its own artifacts and its own log, so you can go back to an
+    earlier one. Downloads are behind links that do not expose your project
+    layout, and they need your session - artifacts are not public.
+  </p>
+  <p>
+    The project <code>.zip</code> excludes build output, caches, your keystore
+    and the temporary signing file. That keeps it around 2 MB instead of 300 MB,
+    and keeps signing passwords out of a Downloads folder.
+  </p>
+
+  <h2>When a build fails</h2>
+  <p>
+    Common failures get a plain sentence above the raw log:
+  </p>
+  <table>
+    <thead><tr><th>What it says</th><th>What to do</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Out of memory</td>
+        <td>The machine ran out during compilation. Try again; if it keeps happening the server needs more memory or swap.</td>
+      </tr>
+      <tr>
+        <td>Missing keystore</td>
+        <td>Upload a signing key, or check the alias matches the one in the file.</td>
+      </tr>
+      <tr>
+        <td>Licence not accepted</td>
+        <td>An Android SDK licence has not been agreed on the server. An administrator runs <code>sdkmanager --licenses</code>.</td>
+      </tr>
+      <tr>
+        <td>Bad URL</td>
+        <td>The website address is not something the app can load. Check it opens in a browser.</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>
+    Anything unrecognised shows the log unchanged rather than a wrong guess. The
+    real error is usually in the last twenty lines.
+  </p>
+
+  <h2>Generating without building</h2>
+  <p>
+    You can produce the project without compiling it. That is the fast way to
+    get the iPhone project onto a Mac when you do not need an Android build, and
+    it is also how you inspect exactly what would be compiled.
+  </p>
+</article>
+<script src="/docs/docs.js"></script>
+</body>
+</html>

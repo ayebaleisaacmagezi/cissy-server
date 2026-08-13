@@ -88,6 +88,8 @@ const ICONS = {
   signing: 'key',
   build: 'play_arrow',
   chevron: 'expand_more',
+  docs: 'menu_book',
+  notifications: 'notifications',
 };
 
 function icon(name, cls = 'gl') {
@@ -488,6 +490,8 @@ const APP_PAGES = [
   ['studio', 'Studio', 'studio', 'Modules, theme and navigation - with a live preview.'],
   ['features', 'Features', 'features', 'The fine print for every module the app ships with.'],
   ['offline', 'Offline', 'offline', 'What the app does when the connection is gone.'],
+  ['notifications', 'Notifications', 'notifications',
+    'Push notifications, through your own Firebase project.'],
   ['signing', 'Signing', 'signing', 'The key that proves every release comes from you.'],
   ['build', 'Build', 'build', 'Turn the configuration into an installable app.'],
 ];
@@ -551,6 +555,9 @@ function renderSidebar() {
       el('button', { class: 'nav-item' + (onBilling ? ' active' : ''), onclick: () => go('#/billing') }, [
         icon('billing'), 'Billing',
       ]),
+      el('a', { class: 'nav-item', href: '/docs' }, [
+        icon('docs'), 'Documentation',
+      ]),
       state.user && state.user.is_admin
         ? el('button', { class: 'nav-item', onclick: () => go('#/admin') }, [
             icon('admin'), 'Admin',
@@ -575,6 +582,9 @@ function renderSidebar() {
           onclick: () => go(`#/app/${state.app.id}/${id}`),
         }, [icon(glyph), label]),
       ),
+      el('a', { class: 'nav-item', href: '/docs' }, [
+        icon('docs'), 'Documentation',
+      ]),
     ]),
   );
 }
@@ -825,6 +835,7 @@ async function showAppPage(appId, section) {
     studio: () => studioPage(app, draft, markDirty),
     features: () => featuresSection(draft, markDirty),
     offline: () => offlineSection(draft, markDirty),
+    notifications: () => notificationsSection(app, draft, markDirty),
     signing: () => signingSection(app),
     build: () => buildSection(app),
   };
@@ -1059,7 +1070,7 @@ function uploadSlot(app, slot, label, hint, accept) {
   const box = el('div', { class: 'drop' + (current ? ' filled' : '') });
 
   // A keystore is not a picture; the image slots show what was uploaded.
-  const thumb = current && slot !== 'keystore'
+  const thumb = current && (slot === 'icon' || slot === 'splash')
     ? el('img', {
         class: 'drop-thumb', alt: '',
         src: `/api/apps/${app.id}/files/${slot}?t=`
@@ -1168,7 +1179,6 @@ const STUDIO_MODULES = [
 ];
 
 const STUDIO_SOON = [
-  ['notifications', 'Push notifications'],
   ['qr_code_scanner', 'QR scanner'],
   ['fingerprint', 'Biometric lock'],
   ['contact_page', 'Contact sheet'],
@@ -1177,9 +1187,15 @@ const STUDIO_SOON = [
 function studioPage(app, draft, markDirty) {
   // The tabs get edited in place, so they must not share objects with the
   // saved app - a discarded draft would otherwise still have changed it.
-  draft.nav_tabs = (draft.nav_tabs || []).map((tab) => ({ ...tab }));
+  // The match list is an array inside the tab, so a shallow copy would leave
+  // the draft and the saved app sharing it - and editing a discarded draft
+  // would still have changed the app.
+  draft.nav_tabs = (draft.nav_tabs || []).map((tab) => ({
+    ...tab, match: [...(tab.match || [])],
+  }));
   draft.nav_style = draft.nav_style || 'none';
   draft.features = [...(draft.features || [])];
+  draft.hide_selectors = [...(draft.hide_selectors || [])];
 
   const library = el('div', { class: 'modlib' });
 
@@ -1291,7 +1307,7 @@ function studioPage(app, draft, markDirty) {
       ];
       ensureFeatureFor('native:settings');
     }
-    markDirty(); renderLibrary(); renderTabs(); renderPreview();
+    markDirty(); renderLibrary(); renderTabs(); renderSiteNavCard(); renderPreview();
   }
 
   styleSel.addEventListener('change', () => setNav(styleSel.value === 'bottom'));
@@ -1344,7 +1360,55 @@ function studioPage(app, draft, markDirty) {
         markDirty(); renderTabs(); renderPreview();
       },
     });
-    return el('div', { class: 'tabedit' }, [label, icon, kind, custom, remove]);
+
+    /* Which other pages light this tab up. Collapsed, because most tabs never
+     * need one and the row is already four controls wide. */
+    tab.match = tab.match || [];
+    const panel = el('div', { class: 'tabmatch', style: 'display:none' });
+    const disclose = el('button', {
+      class: 'btn sm ghost',
+      title: 'Other pages that light up this tab',
+      text: tab.match.length ? `Also ${tab.match.length}` : 'Also…',
+      onclick: () => {
+        const open = panel.style.display === 'none';
+        panel.style.display = open ? '' : 'none';
+        if (open) renderMatch();
+      },
+    });
+
+    function renderMatch() {
+      const rows = tab.match.map((value, at) => {
+        const input = el('input', { class: 'input mono', value, placeholder: '/profile' });
+        input.addEventListener('input', () => { tab.match[at] = input.value; markDirty(); });
+        return el('div', { class: 'selrow' }, [
+          input,
+          el('button', {
+            class: 'btn sm ghost', text: 'Remove',
+            onclick: () => { tab.match.splice(at, 1); markDirty(); renderMatch(); },
+          }),
+        ]);
+      });
+      const blank = el('input', { class: 'input mono', placeholder: 'Add a path, e.g. /profile' });
+      blank.addEventListener('change', () => {
+        const value = blank.value.trim();
+        if (!value) return;
+        tab.match.push(value); markDirty(); renderMatch();
+      });
+      rows.push(el('div', { class: 'selrow' }, [blank]));
+      disclose.textContent = tab.match.length ? `Also ${tab.match.length}` : 'Also…';
+      clear(panel).append(
+        el('label', { text: 'Also light up this tab on' }),
+        ...rows,
+        el('p', { class: 'hint',
+          text: 'Paths on your site. When somebody reaches one of these by tapping a '
+            + `link, this tab lights up instead of the one they came from. Tapping it `
+            + `opens ${tab.target || 'this tab'}.` }),
+      );
+    }
+
+    const row = el('div', { class: 'tabedit' },
+      [label, icon, kind, custom, isNative ? null : disclose, remove].filter(Boolean));
+    return el('div', {}, [row, panel]);
   }
 
   function renderTabs() {
@@ -1364,6 +1428,92 @@ function studioPage(app, draft, markDirty) {
       }) : null,
       el('p', { class: 'hint',
         text: 'Tabs can open a page of the website or a native screen. Native screens switch their module on automatically.' }),
+    ].filter(Boolean));
+  }
+
+  /* the website's own navigation - hidden, so the native bar is not a second one */
+
+  const siteNavCard = el('section', { class: 'group' });
+
+  function selectorRows() {
+    const list = draft.hide_selectors;
+    const rows = list.map((value, index) => {
+      const input = el('input', {
+        class: 'input mono', value, placeholder: '.mobile-bottom-nav',
+      });
+      input.addEventListener('input', () => {
+        list[index] = input.value; markDirty();
+      });
+      return el('div', { class: 'selrow' }, [
+        input,
+        el('button', {
+          class: 'btn sm ghost', text: 'Remove', title: 'Stop hiding this',
+          onclick: () => {
+            list.splice(index, 1); markDirty(); renderSiteNavCard();
+          },
+        }),
+      ]);
+    });
+    // Typing in the blank row grows another one, the way the tab editor works.
+    // No separate Add button for something most apps use once or twice.
+    const blank = el('input', {
+      class: 'input mono', placeholder: 'Add a selector, e.g. .mobile-bottom-nav',
+    });
+    blank.addEventListener('change', () => {
+      const value = blank.value.trim();
+      if (!value) return;
+      list.push(value); markDirty(); renderSiteNavCard();
+    });
+    rows.push(el('div', { class: 'selrow' }, [blank]));
+    return rows;
+  }
+
+  function renderSiteNavCard() {
+    // Only fires in the state that is actually wrong: a native bar with
+    // nothing hiding the website's. An app in Mode A has one bar and is fine.
+    const hiding = draft.hide_selectors.length || draft.body_class || draft.url_flag;
+    const warn = draft.nav_style === 'bottom' && !hiding
+      ? el('div', { class: 'banner warn' }, [
+          el('b', { text: 'Two navigation bars' }),
+          'This app draws a native bottom bar, and the website draws its own '
+            + 'above it. On a phone that is a lot of the screen spent twice. '
+            + "Name the website's bar below and the app will hide it.",
+        ])
+      : null;
+
+    const bodyClass = el('input', {
+      class: 'input mono', value: draft.body_class || '',
+      placeholder: 'web2app-native',
+    });
+    bodyClass.addEventListener('input', () => {
+      draft.body_class = bodyClass.value; markDirty();
+    });
+
+    const flag = el('input', {
+      class: 'input mono', value: draft.url_flag || '',
+      placeholder: 'source=web2app',
+    });
+    flag.addEventListener('input', () => {
+      draft.url_flag = flag.value; markDirty();
+    });
+
+    clear(siteNavCard).append(...[
+      el('h3', { class: 'group-title', text: 'Website navigation' }),
+      warn,
+      el('div', { class: 'field' }, [
+        el('label', { text: 'Hide these elements' }),
+        ...selectorRows(),
+        el('p', { class: 'hint',
+          text: 'CSS selectors, written the way you would in a stylesheet. '
+            + 'Hidden inside the app only - your website is untouched in a browser.' }),
+      ]),
+      field('Body class', bodyClass,
+        'Added to <body> inside the app, so your own stylesheet can hide things. '
+          + 'Survives a redesign in a way selectors do not, but you need to own the CSS.'),
+      field('Entry URL flag', flag,
+        'Appended to the home URL and to navigation tabs. It does not survive the '
+          + 'first link the visitor clicks, so treat it as a hint about how the '
+          + 'session started, not a reliable signal.'),
     ].filter(Boolean));
   }
 
@@ -1602,6 +1752,7 @@ function studioPage(app, draft, markDirty) {
 
   renderLibrary();
   renderTabs();
+  renderSiteNavCard();
   renderOfflineCard();
   renderPreview();
 
@@ -1627,6 +1778,7 @@ function studioPage(app, draft, markDirty) {
           'A bottom bar with a native top app bar. Needed for the Saved, Downloads and Settings screens.'),
         tabsField,
       ]),
+      siteNavCard,
       offlineCard,
     ]),
   ]);
@@ -1653,6 +1805,469 @@ function featuresSection(draft, markDirty) {
       ]))),
     el('p', { class: 'hint', style: 'margin-bottom:14px',
       text: 'Camera and Location need a reason shown to the user. iOS rejects builds without one, so a sensible default is written if you leave it blank.' }),
+  ]);
+}
+
+/* ── notifications ───────────────────────────────────────────────────────
+ *
+ * Numbered cards on one page rather than a wizard. A wizard would be a second
+ * navigation model inside a product that already has one, and it hides the
+ * shape of the job from somebody deciding whether to start. Here the whole
+ * thing is one scroll, the steps can be done in any order, and nothing traps
+ * anyone on step three of six.
+ *
+ * The Firebase setup spans three parties - us, Google and Apple - so each card
+ * carries its own state rather than the page carrying one.
+ */
+
+const PUSH_FOREGROUND = [
+  ['notification', 'Show a notification',
+    'The same banner as when the app is closed. Predictable.'],
+  ['banner', 'Show a bar inside the app',
+    'Quieter. Good for anything that arrives often.'],
+  ['silent', 'Nothing visible',
+    'Recorded but not shown. For silent updates.'],
+];
+
+function stepHead(number, title, done, aside) {
+  return el('div', { class: 'grouphead' }, [
+    el('span', { class: 'stepnum' + (done ? ' done' : '') },
+      [done ? '✓' : String(number)]),
+    el('h3', { class: 'group-title', text: title }),
+    aside ? el('span', { class: 'steppill', text: aside }) : null,
+  ]);
+}
+
+function copyRow(value) {
+  const input = el('input', { class: 'input mono', value, disabled: 'disabled' });
+  return el('div', { class: 'copyrow' }, [
+    input,
+    el('button', {
+      class: 'btn sm', text: 'Copy',
+      onclick: async () => {
+        try {
+          await navigator.clipboard.writeText(value);
+          toast('Copied');
+        } catch (error) {
+          // Clipboard access is refused outside a secure context, which is
+          // exactly where this product runs during development.
+          input.removeAttribute('disabled');
+          input.select();
+          toast('Press Ctrl+C to copy');
+        }
+      },
+    }),
+  ]);
+}
+
+function notificationsSection(app, draft, markDirty) {
+  draft.push_topics = (draft.push_topics || []).map((t) => ({ ...t }));
+
+  const wrap = el('div');
+  const status = app.firebase || {};
+
+  const render = () => {
+    const on = !!draft.push_enabled;
+    const android = status.android;
+    const ios = status.ios;
+    const androidOk = !!(android && android.ok);
+
+    clear(wrap).append(...[
+
+      /* ── on or off ── */
+      el('section', { class: 'group' }, [
+        el('h3', { class: 'group-title', text: 'Push notifications' }),
+        toggleRow(
+          'Push notifications',
+          'Adds Firebase to the app, and a permission prompt your users see.',
+          on,
+          (want) => { draft.push_enabled = want; markDirty(); render(); },
+        ),
+        on ? null : el('p', { class: 'hint', style: 'margin-top:10px' }, [
+          'Your users get told when something happens on your site, even with '
+          + 'the app closed. You will need a free Firebase project on your own '
+          + 'Google account - ',
+          el('a', { href: '/docs/notifications', text: 'how push works' }),
+          '.',
+        ]),
+      ]),
+
+      /* everything below only matters once it is on */
+      ...(!on ? [] : [
+
+        /* ── 1 identifiers ── */
+        el('section', { class: 'group' }, [
+          stepHead(1, '1 Your app’s identifiers', true),
+          el('div', { class: 'banner warn' }, [
+            el('b', { text: 'Do not change these after you publish' }),
+            'Firebase, Google Play and the App Store all key a listing to its '
+            + 'identifier. Changing one later means a new listing, not an update.',
+          ]),
+          field('Android package name', copyRow(app.android_package_id)),
+          field('iOS bundle ID', copyRow(app.ios_bundle_id)),
+        ]),
+
+        /* ── 2 the project ── */
+        el('section', { class: 'group' }, [
+          stepHead(2, '2 Create your Firebase project', androidOk),
+          el('p', { class: 'sub', style: 'margin-bottom:14px',
+            text: 'The project is yours, on your own Google account. We never ask '
+              + 'for your password and cannot see inside it. If you leave Web2App, '
+              + 'it stays with you.' }),
+          androidOk
+            ? el('div', { class: 'banner ok' }, [
+                el('b', { text: `Connected · ${android.project_id}` }),
+                'Read from the configuration file you uploaded below.',
+              ])
+            : null,
+          el('a', { class: 'btn', href: 'https://console.firebase.google.com',
+            target: '_blank', rel: 'noopener', text: 'Open Firebase Console' }),
+        ]),
+
+        /* ── 3 android ── */
+        el('section', { class: 'group' }, [
+          stepHead(3, '3 Android configuration', androidOk),
+          firebaseState(android, app.android_package_id, 'package name'),
+          uploadSlot(app, 'firebase_android', 'Upload google-services.json',
+            'Add an Android app in Firebase using the package name above, then '
+            + 'drop the file here.', '.json'),
+        ]),
+
+        /* ── 4 ios ── */
+        el('section', { class: 'group' }, [
+          stepHead(4, '4 iOS configuration', !!(ios && ios.ok),
+            'optional for Android'),
+          firebaseState(ios, app.ios_bundle_id, 'bundle ID'),
+          uploadSlot(app, 'firebase_ios', 'Upload GoogleService-Info.plist',
+            'Add an iOS app in Firebase using the bundle ID above, then drop '
+            + 'the file here.', '.plist'),
+        ]),
+
+        /* ── 5 apple ── */
+        el('section', { class: 'group' }, [
+          stepHead(5, '5 Apple push key', false, 'iPhone only'),
+          el('p', { class: 'sub', style: 'margin-bottom:12px' }, [
+            'Five steps in your Apple and Firebase accounts. The key never comes '
+            + 'to us - you upload it straight to Firebase, which is both safer '
+            + 'and one fewer thing to trust us with. ',
+            el('a', { href: '/docs/notifications-ios', text: 'Walk me through it' }),
+            '.',
+          ]),
+        ]),
+
+        topicsCard(draft, markDirty, render),
+        behaviourCard(draft, markDirty, render),
+        promptCard(draft, markDirty),
+        sendingCard(app, draft, markDirty),
+        testCard(app, status),
+      ]),
+    ].filter(Boolean));
+  };
+
+  render();
+  return wrap;
+}
+
+function toggleRow(title, hint, on, change) {
+  const knob = el('div', { class: 'sw' + (on ? ' on' : '') });
+  return el('button', {
+    class: 'toprow', style: 'width:100%;background:none;border:0;font:inherit;'
+      + 'text-align:left;cursor:pointer;padding:10px 0',
+    onclick: () => change(!on),
+  }, [
+    el('div', {}, [
+      el('div', { class: 'tl', text: title }),
+      el('div', { class: 'th', text: hint }),
+    ]),
+    knob,
+  ]);
+}
+
+/* What an uploaded Firebase file says, and whether it still fits. Recomputed
+ * by the server on every read, so a package name changed after the upload
+ * shows up here rather than three minutes into a build. */
+function firebaseState(entry, expected, what) {
+  if (!entry) return null;
+  if (entry.ok) {
+    return el('div', { class: 'banner ok' }, [
+      el('b', { text: 'Valid, and it matches this app' }),
+      `Project ${entry.project_id} · ${what} ${expected}`,
+    ]);
+  }
+  return el('div', { class: 'banner err' }, [
+    el('b', { text: 'This file does not match this app' }),
+    entry.problem || 'Upload the file for this app.',
+  ]);
+}
+
+function topicsCard(draft, markDirty, rerender) {
+  const rows = draft.push_topics.map((topic, index) => {
+    const label = el('input', { class: 'input', value: topic.label || '',
+      placeholder: 'Order updates' });
+    label.addEventListener('input', () => {
+      topic.label = label.value; markDirty();
+    });
+    const id = el('input', { class: 'input mono', value: topic.id || '',
+      placeholder: 'orders' });
+    id.addEventListener('input', () => { topic.id = id.value; markDirty(); });
+
+    const on = el('div', { class: 'sw' + (topic.default ? ' on' : '') });
+    const toggle = el('button', {
+      class: 'btn sm ghost', title: 'On by default for a new install',
+      onclick: () => { topic.default = !topic.default; markDirty(); rerender(); },
+    }, [on]);
+
+    return el('div', { class: 'tabedit' }, [
+      label, id, toggle,
+      el('button', { class: 'btn sm ghost', text: 'Remove',
+        onclick: () => {
+          draft.push_topics.splice(index, 1); markDirty(); rerender();
+        } }),
+    ]);
+  });
+
+  return el('section', { class: 'group' }, [
+    stepHead(6, '6 Categories', draft.push_topics.length > 0),
+    el('p', { class: 'sub', style: 'margin-bottom:12px',
+      text: 'Your users switch these on and off inside the app. Send to a '
+        + 'category and Firebase delivers it to everyone subscribed - you never '
+        + 'handle a list of devices.' }),
+    ...rows,
+    draft.push_topics.length < 12 ? el('button', {
+      class: 'btn sm', text: '+ Add a category',
+      onclick: () => {
+        draft.push_topics.push({ id: '', label: '', default: true });
+        markDirty(); rerender();
+      },
+    }) : null,
+    el('p', { class: 'hint' }, [
+      'Name, then the topic your backend sends to, then whether it is on for a '
+      + 'new install. ',
+      el('b', { text: 'The topic cannot be changed once your app is published' }),
+      ' - installs already subscribed would silently stop receiving.',
+    ]),
+  ].filter(Boolean));
+}
+
+function behaviourCard(draft, markDirty, rerender) {
+  const current = draft.push_foreground || 'notification';
+  return el('section', { class: 'group' }, [
+    stepHead(7, '7 While the app is open', true),
+    el('p', { class: 'sub', style: 'margin-bottom:12px',
+      text: 'Android and iPhone both hand a message to the app instead of '
+        + 'showing it when the app is in front, so this is your choice.' }),
+    el('div', { class: 'radios' }, PUSH_FOREGROUND.map(([value, title, blurb]) =>
+      el('button', {
+        class: 'radiocard' + (current === value ? ' on' : ''),
+        onclick: () => {
+          draft.push_foreground = value; markDirty(); rerender();
+        },
+      }, [
+        el('span', { class: 'rd' }),
+        el('span', {}, [
+          el('b', { text: title }),
+          el('span', { text: blurb }),
+        ]),
+      ]))),
+  ]);
+}
+
+function promptCard(draft, markDirty) {
+  const title = el('input', { class: 'input',
+    value: draft.push_prompt_title || '', placeholder: 'Stay updated' });
+  title.addEventListener('input', () => {
+    draft.push_prompt_title = title.value; markDirty();
+  });
+  const body = el('textarea', { class: 'input', rows: '3',
+    placeholder: 'Get told when your order is ready.' });
+  body.value = draft.push_prompt_body || '';
+  body.addEventListener('input', () => {
+    draft.push_prompt_body = body.value; markDirty();
+  });
+
+  return el('section', { class: 'group' }, [
+    stepHead(8, '8 How the app asks', true),
+    field('Heading', title),
+    field('Explanation', body,
+      'Shown before the phone’s own prompt. Say what people get, not that '
+      + 'you would like permission.'),
+    el('div', { class: 'banner info' }, [
+      el('b', { text: 'Asked on the second visit, not on first launch' }),
+      'Somebody who has not seen your app yet has no reason to say yes, and on '
+      + 'both platforms a refusal can only be undone by the user in system '
+      + 'settings.',
+    ]),
+  ]);
+}
+
+/* The generated integration guide. Values come from the server rather than
+ * being assembled here, because the project id is read out of the uploaded
+ * configuration file - so the guide cannot describe a project the app is not
+ * actually built against. */
+function sendingCard(app, draft, markDirty) {
+  const modes = [
+    ['console', 'From the Firebase Console',
+      'Type a message, press send. Nothing to build. Good for announcements.'],
+    ['backend', 'From my own website or backend',
+      'Your server sends when something happens - an order is ready, a result '
+      + 'is published. Web2App is not involved and does not need to be running.'],
+  ];
+  let mode = draft.push_token_endpoint ? 'backend' : 'backend';
+  let stack = 'node';
+
+  const picker = el('div', { class: 'stackpick' });
+  const codeBox = el('div');
+  const endpointField = el('div');
+  const body = el('div');
+
+  async function loadGuide() {
+    clear(codeBox).append(el('p', { class: 'hint', text: 'Loading…' }));
+    try {
+      const data = await api(
+        'GET', `/api/apps/${app.id}/push-docs?stack=${encodeURIComponent(stack)}`);
+      clear(picker).append(...data.stacks.map((s) =>
+        el('button', {
+          class: 'btn sm' + (s.id === stack ? ' on' : ''),
+          text: s.label,
+          onclick: () => { stack = s.id; loadGuide(); },
+        })));
+      const guide = data.guide;
+      clear(codeBox).append(...[
+        data.configured ? null : el('div', { class: 'banner warn' }, [
+          el('b', { text: 'Upload your Firebase file first' }),
+          'Until then this guide shows a placeholder project id.',
+        ]),
+        guide.install ? el('div', { class: 'field' }, [
+          el('label', { text: 'Install' }),
+          el('pre', { class: 'console', style: 'max-height:none',
+            text: guide.install }),
+        ]) : null,
+        el('div', { class: 'banner info' }, [
+          el('b', { text: 'Your values are already in it' }),
+          'Nothing below is a placeholder. Copy it into your project as it is.',
+        ]),
+        el('pre', { class: 'console', style: 'max-height:none', text: guide.code }),
+        el('button', {
+          class: 'btn sm', style: 'margin-top:10px', text: 'Copy',
+          onclick: async () => {
+            try {
+              await navigator.clipboard.writeText(guide.code);
+              toast('Copied');
+            } catch (error) {
+              toast('Select the code and press Ctrl+C', true);
+            }
+          },
+        }),
+        ...guide.notes.map((note) =>
+          el('p', { class: 'hint', style: 'margin-top:10px', text: note })),
+      ].filter(Boolean));
+    } catch (error) {
+      clear(codeBox).append(
+        el('div', { class: 'banner err' }, [
+          el('b', { text: 'Could not build the guide' }), error.message,
+        ]));
+    }
+  }
+
+  function renderBody() {
+    if (mode === 'console') {
+      clear(body).append(
+        el('p', { class: 'sub' }, [
+          'In your Firebase project, open Messaging and compose a notification. '
+          + 'Add ', el('code', { text: 'action=open_url' }), ' and ',
+          el('code', { text: 'url=/offers' }),
+          ' under custom data to make it open a page. ',
+          el('a', { href: '/docs/notifications-sending', text: 'More' }), '.',
+        ]),
+        el('a', { class: 'btn', href: 'https://console.firebase.google.com',
+          target: '_blank', rel: 'noopener', text: 'Open Firebase Console' }),
+      );
+      return;
+    }
+    clear(body).append(
+      el('div', { class: 'field' }, [
+        el('label', { text: 'What does your backend use?' }), picker,
+      ]),
+      codeBox,
+      endpointField,
+    );
+    loadGuide();
+  }
+
+  const endpoint = el('input', { class: 'input mono',
+    value: draft.push_token_endpoint || '',
+    placeholder: 'https://yoursite.example/api/push-token' });
+  endpoint.addEventListener('input', () => {
+    draft.push_token_endpoint = endpoint.value; markDirty();
+  });
+  clear(endpointField).append(
+    el('h3', { class: 'group-title', style: 'margin-top:22px',
+      text: 'Messages for one person' }),
+    el('p', { class: 'sub' }, [
+      'Categories are broadcasts. To reach one person your backend needs to '
+      + 'know which device belongs to which user. The simplest way is to ask '
+      + 'the app from a page where you already know who is signed in - ',
+      el('a', { href: '/docs/notifications-sending', text: 'the two-line version' }),
+      '. If your site cannot run that, the app can post the token here instead:',
+    ]),
+    field('Push token endpoint', endpoint,
+      'Optional. Leave it empty and the app never phones anywhere.'),
+  );
+
+  const card = el('section', { class: 'group' }, [
+    stepHead(10, '10 How will you send notifications?', true),
+    el('div', { class: 'radios' }, modes.map(([value, title, blurb]) =>
+      el('button', {
+        class: 'radiocard' + (mode === value ? ' on' : ''),
+        onclick: (event) => {
+          mode = value;
+          for (const node of card.querySelectorAll('.radiocard')) {
+            node.classList.remove('on');
+          }
+          event.currentTarget.classList.add('on');
+          renderBody();
+        },
+      }, [
+        el('span', { class: 'rd' }),
+        el('span', {}, [el('b', { text: title }), el('span', { text: blurb })]),
+      ]))),
+    el('div', { class: 'radiocard off' }, [
+      el('span', { class: 'rd' }),
+      el('span', {}, [
+        el('b', { text: 'Through Web2App' }),
+        el('span', { text: 'A managed sending API. Not built, and deliberately '
+          + 'optional when it is - you should never need us online for your '
+          + 'notifications to arrive.' }),
+      ]),
+    ]),
+    body,
+  ]);
+  renderBody();
+  return card;
+}
+
+function testCard(app, status) {
+  const android = status.android;
+  const ios = status.ios;
+  const kv = (name, value, tone) => el('div', { class: 'kv' }, [
+    el('span', { text: name }),
+    el('span', { style: tone ? `color:var(--${tone})` : '', text: value }),
+  ]);
+  return el('section', { class: 'group' }, [
+    stepHead(9, '9 Check it worked', false),
+    kv('Android configuration',
+      android ? (android.ok ? 'Valid' : 'Does not match') : 'Not uploaded',
+      android && android.ok ? 'ok-ink' : 'ink-3'),
+    kv('iOS configuration',
+      ios ? (ios.ok ? 'Valid' : 'Does not match') : 'Not uploaded',
+      ios && ios.ok ? 'ok-ink' : 'ink-3'),
+    el('p', { class: 'hint', style: 'margin-top:12px' }, [
+      'Build the app, install it, and open it twice. Then send yourself one '
+      + 'from Firebase’s message composer. ',
+      el('a', { href: '/docs/notifications-setup#checking',
+        text: 'If it does not arrive' }),
+      '.',
+    ]),
   ]);
 }
 

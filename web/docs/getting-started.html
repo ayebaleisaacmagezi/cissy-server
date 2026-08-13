@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Getting started - Web2App docs</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/docs/docs.css">
+</head>
+<body>
+<article>
+  <h1>Getting started</h1>
+  <p class="lede">
+    From a website address to an app you can install, in about ten minutes of
+    your time plus the build itself.
+  </p>
+
+  <h2>Before you begin</h2>
+  <p>
+    Your website should already work on a phone. Open it on one and scroll
+    around. If it is hard to use in a mobile browser it will be exactly as hard
+    inside the app - the app shows your real site, so it inherits whatever the
+    site does.
+  </p>
+
+  <h2>Create the app</h2>
+  <ol class="steps">
+    <li>
+      <b>Press New app</b>
+      Give it a name and your website address. The name is what appears under
+      the icon on the phone, so keep it short - long names get cut off by the
+      launcher.
+    </li>
+    <li>
+      <b>Check the identifiers on the Identity page</b>
+      Web2App suggests an Android package name and an iOS bundle ID from your
+      site's address, for example <code>com.jokeb.mobile</code>. Change them now
+      if you want something else.
+      <div class="note warn" style="margin-top:10px">
+        <b>These are permanent once you publish</b>
+        <p>
+          Google Play and the App Store both key a listing to its identifier.
+          Changing it after release means a brand new listing, with none of your
+          reviews, ratings or installs - not an update. Settle it before your
+          first upload.
+        </p>
+      </div>
+    </li>
+    <li>
+      <b>Add your icon and splash screen on Branding</b>
+      A square PNG for the icon, at least 512 by 512. The splash is what fills
+      the screen while the app starts.
+    </li>
+    <li>
+      <b>Set it up in Studio</b>
+      Your brand colour, which native modules to include, and whether you want
+      a native bottom navigation bar. The phone preview shows your real website
+      as you work.
+    </li>
+    <li>
+      <b>Upload a signing key on Signing</b>
+      Android will not accept an app that is not signed. If you have never made
+      one, that page walks you through it.
+    </li>
+    <li>
+      <b>Press Build</b>
+      The log streams live. The first build of an app takes several minutes
+      because it downloads the Android toolchain; later builds are faster.
+      You can close the tab - the build carries on without you.
+    </li>
+    <li>
+      <b>Download and install</b>
+      Take the APK, put it on an Android phone, open it. Android will ask you
+      to allow installing from this source; that is normal for an app that has
+      not come from the Play Store yet.
+    </li>
+  </ol>
+
+  <h2>What you get</h2>
+  <table>
+    <thead><tr><th>File</th><th>What it is for</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>APK</td>
+        <td>
+          Install straight onto an Android phone. This is what you test with and
+          what you send to people to try.
+        </td>
+      </tr>
+      <tr>
+        <td>AAB</td>
+        <td>
+          The Android App Bundle. This is what Google Play accepts for
+          publishing. You cannot install it on a phone directly.
+        </td>
+      </tr>
+      <tr>
+        <td>Project <code>.zip</code></td>
+        <td>
+          The complete Flutter project, for building the iPhone version on a
+          Mac. See <a href="/docs/publishing">Publishing</a>.
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="note ok">
+    <b>Changing your site needs no new build</b>
+    <p>
+      The app loads your live website. Publish a change and every installed app
+      shows it at once. You only need a new build when you change something
+      about the app itself - the icon, the navigation, the modules, the name.
+    </p>
+  </div>
+
+  <h2>If the build fails</h2>
+  <p>
+    The build page puts a plain sentence above the raw log when it recognises
+    the failure - a bad URL, a missing keystore, an Android licence that has not
+    been accepted, or the machine running out of memory. When it does not
+    recognise the failure it shows the log unchanged rather than guessing at a
+    cause, so read the last twenty lines or so.
+  </p>
+</article>
+<script src="/docs/docs.js"></script>
+</body>
+</html>

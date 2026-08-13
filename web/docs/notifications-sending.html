@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sending notifications - Web2App docs</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/docs/docs.css">
+</head>
+<body>
+<article>
+  <h1>Sending</h1>
+  <p class="lede">
+    Two ways, and you can use both. Type a message by hand in Firebase, or have
+    your own server send when something happens.
+  </p>
+
+  <h2>By hand, from the Firebase Console</h2>
+  <p>
+    Nothing to build. In your Firebase project, open <b>Messaging</b>, compose a
+    notification, choose your app, and send. Good for announcements, news, an
+    offer this weekend.
+  </p>
+  <p>
+    Under <b>Additional options</b> you can add custom data, which is how you
+    make the notification open a particular page:
+  </p>
+  <table>
+    <thead><tr><th>Key</th><th>Value</th></tr></thead>
+    <tbody>
+      <tr><td><code>action</code></td><td><code>open_url</code></td></tr>
+      <tr><td><code>url</code></td><td><code>/offers/weekend</code></td></tr>
+    </tbody>
+  </table>
+  <p>Leave those out and tapping the notification just opens the app.</p>
+
+  <h2>From your own server</h2>
+  <p>
+    This is the one that matters, because it is the only way to send when
+    something actually happens - an order is ready, a result is published, a
+    message arrives.
+  </p>
+
+  <h3>Get a service-account key</h3>
+  <p>
+    In Firebase: <b>Project settings</b> → <b>Service accounts</b> → <b>Generate
+    new private key</b>. You get a JSON file.
+  </p>
+  <div class="note stop">
+    <b>That file is a password for your project</b>
+    <p>
+      Anyone holding it can send notifications to all your users. Keep it on
+      your server, out of your git repository, and never in anything a browser
+      downloads. Do not send it to us - we have no use for it and no way to keep
+      it safer than you can.
+    </p>
+    <p>
+      The usual arrangement is to store it outside the web root and point the
+      <code>GOOGLE_APPLICATION_CREDENTIALS</code> environment variable at it.
+    </p>
+  </div>
+
+  <h3>Code for your stack</h3>
+  <p>
+    The <b>Notifications</b> page in the app generates this for Node.js, PHP,
+    Laravel, Python, .NET, WordPress and plain HTTP, with your project ID and
+    your category names already filled in. Pick your backend there and copy it.
+    Here is the shape, using Node:
+  </p>
+  <pre><code><span class="c">// GOOGLE_APPLICATION_CREDENTIALS points at your service-account JSON.</span>
+<span class="k">const</span> admin = require(<span class="s">"firebase-admin"</span>);
+
+admin.initializeApp({
+  credential: admin.credential.applicationDefault(),
+  projectId: <span class="s">"your-project-id"</span>,
+});
+
+<span class="k">await</span> admin.messaging().send({
+  topic: <span class="s">"orders"</span>,
+  notification: {
+    title: <span class="s">"Order ready"</span>,
+    body: <span class="s">"Order #123 is ready for pickup."</span>,
+  },
+  data: {
+    action: <span class="s">"open_url"</span>,
+    url: <span class="s">"/orders/123"</span>,
+  },
+});</code></pre>
+
+  <h2>The payload</h2>
+  <p>Two parts, and the difference matters.</p>
+  <ul>
+    <li>
+      <b><code>notification</code></b> - the title and body the person reads.
+      The phone displays these itself.
+    </li>
+    <li>
+      <b><code>data</code></b> - instructions for the app. The app reads
+      <code>action</code> and <code>url</code>.
+    </li>
+  </ul>
+  <table>
+    <thead><tr><th><code>action</code></th><th>What happens on tap</th></tr></thead>
+    <tbody>
+      <tr><td><code>open_url</code></td><td>Opens <code>url</code> in the app. A path is resolved against your website address.</td></tr>
+      <tr><td><code>none</code></td><td>Opens the app, nothing more.</td></tr>
+    </tbody>
+  </table>
+  <div class="note info">
+    <b>The app checks the destination</b>
+    <p>
+      Anything outside your allowed domains is ignored, and an action the app
+      does not recognise does nothing. A notification arrives from the network,
+      so it is treated as untrusted - it can open a page of yours and that is
+      all it can do.
+    </p>
+  </div>
+
+  <h2>Sending to one person</h2>
+  <p>
+    Categories are broadcasts. To reach one person your backend has to know
+    which device belongs to which user, and there are two ways to get that.
+  </p>
+
+  <h3>From your website, once they are signed in</h3>
+  <p>
+    Your pages can ask the app for the device's token. Your site already knows
+    who is logged in, so it can send the token to your backend over its own
+    session - no new endpoint and no new authentication to design.
+  </p>
+  <pre><code><span class="k">if</span> (window.flutter_inappwebview) {
+  <span class="k">const</span> result = <span class="k">await</span> window.flutter_inappwebview
+    .callHandler(<span class="s">'CissyBridge'</span>, { action: <span class="s">'getPushToken'</span> });
+
+  <span class="k">if</span> (result.status === <span class="s">'ok'</span>) {
+    <span class="k">await</span> fetch(<span class="s">'/api/my-devices'</span>, {
+      method: <span class="s">'POST'</span>,
+      headers: { <span class="s">'Content-Type'</span>: <span class="s">'application/json'</span> },
+      body: JSON.stringify({ token: result.token }),
+    });
+  }
+}</code></pre>
+  <p>
+    Store the token against the user. To send to them, use
+    <code>token:</code> instead of <code>topic:</code>.
+  </p>
+  <p>
+    The bridge only answers on your allowed domains, so another site loaded in
+    the app cannot call it. It also offers
+    <code>{ action: 'getPlatform' }</code> and
+    <code>{ action: 'requestNotificationPermission' }</code>.
+  </p>
+
+  <h3>Or have the app post it for you</h3>
+  <p>
+    If your site cannot run that JavaScript, set a <b>push token endpoint</b> on
+    the Notifications page. The app posts to it whenever it gets or refreshes a
+    token:
+  </p>
+  <pre><code>POST https://yoursite.example/api/push-token
+Content-Type: application/json
+
+{ "token": "…", "platform": "android", "appVersion": "1.2.0" }</code></pre>
+  <p>
+    Your endpoint has to work out who this is - from a session cookie the app
+    carries, or by having the person sign in first. That is why the JavaScript
+    route above is usually simpler.
+  </p>
+
+  <h2>Tokens change</h2>
+  <p>
+    A device token is not permanent. It changes when the app is reinstalled,
+    when data is cleared, and occasionally on its own. Always store the newest
+    one you were given, and drop tokens that Firebase reports as unregistered
+    when you send - otherwise your list fills up with dead entries.
+  </p>
+</article>
+<script src="/docs/docs.js"></script>
+</body>
+</html>

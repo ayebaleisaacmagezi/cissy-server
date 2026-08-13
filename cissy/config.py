@@ -47,6 +47,11 @@ NAV_NATIVE_TARGETS = {
     "native:settings": "Settings screen",
 }
 
+# Notifications is a native target too, but it is not backed by a feature flag -
+# it exists when push is switched on. Kept out of the map above so the
+# feature-name lookup there stays honest.
+NAV_NOTIFICATIONS = "native:notifications"
+
 # The Material icon names a tab may use. A fixed set because the generated
 # Dart maps each name to an IconData at compile time.
 NAV_ICONS = (
@@ -65,6 +70,44 @@ NAV_ICONS = (
 )
 
 _HEX_COLOR_RE = re.compile(r"^#[0-9a-f]{6}$")
+
+# Characters a CSS selector never needs, and which would break out of the
+# context it is injected into. A selector travels from a text field into a CSS
+# rule, inside a JavaScript string, inside a Dart string - so a stray brace
+# escapes the rule and a stray quote breaks the generated Dart at compile time,
+# three minutes into a build, with a message that mentions none of this.
+# Rejected rather than escaped, because nothing legal is being refused.
+_SELECTOR_BANNED = frozenset('{};"\'\\<>`')
+MAX_HIDE_SELECTORS = 20
+MAX_SELECTOR_LENGTH = 120
+
+# Extra paths a navigation tab lights up for. A handful covers the real case -
+# /account also meaning /profile and /orders - and a long list is a sign the
+# tab wants splitting.
+MAX_TAB_MATCHES = 10
+
+# What the app does with a message that arrives while it is open. Android and
+# iOS both hand a foreground message to the app instead of showing it, so this
+# is a decision somebody has to make rather than a platform default.
+PUSH_FOREGROUND = ("notification", "banner", "silent")
+
+# A notification category. The id is the FCM topic the customer's backend sends
+# to, so it is far more permanent than the label: published installs subscribe
+# by id, and renaming one strands every device already subscribed.
+_TOPIC_ID_RE = re.compile(r"^[a-z][a-z0-9_-]{0,30}$")
+MAX_PUSH_TOPICS = 12
+
+DEFAULT_PUSH_PROMPT_TITLE = "Stay updated"
+DEFAULT_PUSH_PROMPT_BODY = (
+    "Get told when something happens that you care about. You can turn this "
+    "off at any time."
+)
+
+# A class name the app adds to <body>, and a query parameter appended to the
+# entry URL. Both are narrow on purpose: they are written into a page this
+# server does not own.
+_BODY_CLASS_RE = re.compile(r"^[a-z][a-z0-9_-]{0,40}$")
+_URL_FLAG_RE = re.compile(r"^[a-z][a-z0-9_]*=[a-z0-9_.-]+$")
 
 # Written into Info.plist. Vague reasons are a common App Store rejection, so
 # these name the app and say what the permission is actually for.
@@ -117,8 +160,34 @@ class AppConfig:
     # Empty means the neutral grey default - never this product's own blue.
     theme_color: str = ""
     nav_style: str = "none"
-    # Each tab: {"label": ..., "icon": <NAV_ICONS>, "target": url | /path | native:*}
-    nav_tabs: tuple[dict[str, str], ...] = ()
+    # Each tab: {"label": ..., "icon": <NAV_ICONS>, "target": url | /path |
+    # native:*, "match": [<path>, ...]}. Values are not all strings - "match"
+    # is a list - which is why the annotation is Any.
+    nav_tabs: tuple[dict[str, Any], ...] = ()
+    # Taking the website's own navigation down, so a native bar does not simply
+    # sit underneath it. Three mechanisms in descending order of reliability:
+    # CSS the app injects, a class the app adds to <body> for the site's own
+    # stylesheet to key off, and a query parameter on the entry URL. All three
+    # apply only on an allowed host - the app is not entitled to restyle
+    # somebody else's page.
+    hide_selectors: tuple[str, ...] = ()
+    body_class: str = ""
+    url_flag: str = ""
+    # Push notifications. The customer owns the Firebase project; this server
+    # only ever holds the two client configuration files, which are not
+    # secrets - they ship inside the app. The service-account key that can
+    # actually send a message never comes here at all.
+    push_enabled: bool = False
+    # Each topic: {"id": <FCM topic>, "label": ..., "default": bool}
+    push_topics: tuple[dict[str, Any], ...] = ()
+    push_prompt_title: str = ""
+    push_prompt_body: str = ""
+    push_foreground: str = "notification"
+    # Where the app POSTs its FCM token, for customers whose site cannot run
+    # the JavaScript bridge. Empty means the app never phones anywhere.
+    push_token_endpoint: str = ""
+    firebase_android_file: str | None = None
+    firebase_ios_file: str | None = None
     custom_user_agent: str | None = None
     version_name: str = "1.0.0"
     version_code: int = 1
@@ -197,7 +266,21 @@ class AppConfig:
             "offline_custom_html": self.offline_custom_html,
             "theme_color": self.theme_color,
             "nav_style": self.nav_style,
-            "nav_tabs": [dict(tab) for tab in self.nav_tabs],
+            "nav_tabs": [
+                {**tab, "match": list(tab.get("match") or ())}
+                for tab in self.nav_tabs
+            ],
+            "hide_selectors": list(self.hide_selectors),
+            "body_class": self.body_class,
+            "url_flag": self.url_flag,
+            "push_enabled": self.push_enabled,
+            "push_topics": [dict(topic) for topic in self.push_topics],
+            "push_prompt_title": self.push_prompt_title,
+            "push_prompt_body": self.push_prompt_body,
+            "push_foreground": self.push_foreground,
+            "push_token_endpoint": self.push_token_endpoint,
+            "firebase_android_file": self.firebase_android_file,
+            "firebase_ios_file": self.firebase_ios_file,
             "custom_user_agent": self.custom_user_agent,
             "version_name": self.version_name,
             "version_code": self.version_code,
@@ -238,6 +321,17 @@ class AppConfig:
             theme_color=_text(data, "theme_color"),
             nav_style=_text(data, "nav_style") or "none",
             nav_tabs=_tab_list(data, "nav_tabs"),
+            hide_selectors=tuple(_str_list(data, "hide_selectors")),
+            body_class=_text(data, "body_class"),
+            url_flag=_text(data, "url_flag"),
+            push_enabled=_flag(data, "push_enabled", False),
+            push_topics=_topic_list(data, "push_topics"),
+            push_prompt_title=_text(data, "push_prompt_title"),
+            push_prompt_body=_text(data, "push_prompt_body"),
+            push_foreground=_text(data, "push_foreground") or "notification",
+            push_token_endpoint=_text(data, "push_token_endpoint"),
+            firebase_android_file=_optional_text(data, "firebase_android_file"),
+            firebase_ios_file=_optional_text(data, "firebase_ios_file"),
             custom_user_agent=_optional_text(data, "custom_user_agent"),
             version_name=_text(data, "version_name") or "1.0.0",
             version_code=_positive_int(data, "version_code", 1),
@@ -273,14 +367,45 @@ def normalise(config: AppConfig) -> AppConfig:
 
     agent = (config.custom_user_agent or "").strip()
 
+    # Selectors keep their case: `.mobileNav` and `.mobilenav` are different
+    # elements to a browser, so lower-casing them the way domains are would
+    # quietly stop them matching.
+    selectors = []
+    for selector in config.hide_selectors:
+        cleaned = selector.strip()
+        if cleaned and cleaned not in selectors:
+            selectors.append(cleaned)
+
+    topics = []
+    seen_topics = set()
+    for topic in config.push_topics:
+        identifier = str(topic.get("id", "")).strip().lower()
+        label = str(topic.get("label", "")).strip()
+        if not identifier and not label:
+            continue
+        if identifier in seen_topics:
+            continue
+        seen_topics.add(identifier)
+        topics.append({
+            "id": identifier,
+            "label": label,
+            "default": bool(topic.get("default", False)),
+        })
+
     style = config.nav_style.strip().lower() or "none"
     tabs = []
     if style != "none":
         for tab in config.nav_tabs:
+            matches = []
+            for match in tab.get("match") or ():
+                path = str(match).strip()
+                if path and path not in matches:
+                    matches.append(path)
             cleaned = {
                 "label": str(tab.get("label", "")).strip(),
                 "icon": str(tab.get("icon", "")).strip().lower(),
                 "target": str(tab.get("target", "")).strip(),
+                "match": matches,
             }
             if cleaned["label"] or cleaned["target"]:
                 tabs.append(cleaned)
@@ -298,6 +423,14 @@ def normalise(config: AppConfig) -> AppConfig:
         theme_color=config.theme_color.strip().lower(),
         nav_style=style,
         nav_tabs=tuple(tabs),
+        hide_selectors=tuple(selectors),
+        body_class=config.body_class.strip().lower(),
+        url_flag=config.url_flag.strip().lower().lstrip("?&"),
+        push_topics=tuple(topics),
+        push_prompt_title=config.push_prompt_title.strip(),
+        push_prompt_body=config.push_prompt_body.strip(),
+        push_foreground=config.push_foreground.strip().lower() or "notification",
+        push_token_endpoint=config.push_token_endpoint.strip(),
         custom_user_agent=agent or None,
         key_alias=(config.key_alias or "").strip() or None,
     )
@@ -363,6 +496,11 @@ def validate(config: AppConfig) -> None:
     if config.nav_style != "none":
         _validate_nav_tabs(config)
 
+    _validate_website_nav(config)
+
+    if config.push_enabled:
+        _validate_push(config)
+
     if not _VERSION_NAME_RE.match(config.version_name):
         raise ValidationError(
             "The version name should look like 1.4.0.",
@@ -371,6 +509,107 @@ def validate(config: AppConfig) -> None:
 
     if config.version_code < 1:
         raise ValidationError("The version code must be 1 or higher.")
+
+
+def _validate_push(config: AppConfig) -> None:
+    """Check the notification settings. Only runs when push is switched on.
+
+    The Firebase files are deliberately not required here. Somebody switches
+    push on and then goes to Firebase to create the project, so demanding the
+    file at this point would refuse the save that records the decision. The
+    build is where a missing file becomes an error, because that is the first
+    moment it would produce a broken app.
+    """
+    if config.push_foreground not in PUSH_FOREGROUND:
+        raise ValidationError(
+            "A notification arriving while the app is open must show a "
+            "notification, show a bar inside the app, or do nothing visible.",
+            detail=config.push_foreground,
+        )
+
+    if len(config.push_topics) > MAX_PUSH_TOPICS:
+        raise ValidationError(
+            f"That is {len(config.push_topics)} notification categories. Keep "
+            f"it to {MAX_PUSH_TOPICS} - the list is a screen your users read."
+        )
+
+    for topic in config.push_topics:
+        identifier = str(topic.get("id", ""))
+        label = str(topic.get("label", ""))
+        if not label:
+            raise ValidationError("Every notification category needs a name.")
+        if not _TOPIC_ID_RE.match(identifier):
+            raise ValidationError(
+                f'The topic for "{label}" must start with a letter and use only '
+                f"lower-case letters, digits, hyphens and underscores - it is "
+                f"what your backend sends to.",
+                detail=identifier,
+            )
+
+    for value, what in (
+        (config.push_prompt_title, "heading"),
+        (config.push_prompt_body, "explanation"),
+    ):
+        if len(value) > 300:
+            raise ValidationError(
+                f"The notification prompt {what} is too long to fit on a phone "
+                f"screen. Keep it under 300 characters."
+            )
+
+    if config.push_token_endpoint:
+        parsed = urlparse(config.push_token_endpoint)
+        if parsed.scheme != "https" or not parsed.netloc:
+            raise ValidationError(
+                "The push token endpoint must be an https:// address. The app "
+                "posts a device token to it, which is not something to send "
+                "over plain HTTP.",
+                detail=config.push_token_endpoint,
+            )
+
+
+def _validate_website_nav(config: AppConfig) -> None:
+    """Check what the app will inject into a page this server does not own."""
+    if len(config.hide_selectors) > MAX_HIDE_SELECTORS:
+        raise ValidationError(
+            f"That is {len(config.hide_selectors)} selectors to hide. Keep it "
+            f"to {MAX_HIDE_SELECTORS} - past that it is usually the page that "
+            f"needs a different approach, not a longer list."
+        )
+
+    for selector in config.hide_selectors:
+        if len(selector) > MAX_SELECTOR_LENGTH:
+            raise ValidationError(
+                f"That selector is {len(selector)} characters. Keep each one "
+                f"under {MAX_SELECTOR_LENGTH}.",
+                detail=selector,
+            )
+        bad = sorted(_SELECTOR_BANNED.intersection(selector))
+        if bad:
+            raise ValidationError(
+                f"A selector cannot contain {' '.join(bad)}. Write it the way "
+                f"you would in a stylesheet - \".mobile-nav\" or \"#footer .menu\" - "
+                f"with no braces and no rule body.",
+                detail=selector,
+            )
+        if any(character < " " or character == "\x7f" for character in selector):
+            raise ValidationError(
+                "A selector must be a single line.", detail=selector
+            )
+
+    if config.body_class and not _BODY_CLASS_RE.match(config.body_class):
+        raise ValidationError(
+            "The body class must start with a letter and use only lower-case "
+            "letters, digits, hyphens and underscores - for example "
+            "web2app-native.",
+            detail=config.body_class,
+        )
+
+    if config.url_flag and not _URL_FLAG_RE.match(config.url_flag):
+        raise ValidationError(
+            "The entry URL flag must be a single name=value pair, with no "
+            "question mark - for example source=web2app.",
+            detail=config.url_flag,
+        )
 
 
 def _validate_nav_tabs(config: AppConfig) -> None:
@@ -393,7 +632,34 @@ def _validate_nav_tabs(config: AppConfig) -> None:
             )
         if icon and icon not in NAV_ICONS:
             raise ValidationError(f'Unknown tab icon "{icon}".')
-        if target in NAV_NATIVE_TARGETS:
+
+        matches = tab.get("match") or ()
+        if matches and (target in NAV_NATIVE_TARGETS or target == NAV_NOTIFICATIONS):
+            raise ValidationError(
+                f'The "{label}" tab opens a native screen, so it cannot also '
+                f"light up for pages of the website."
+            )
+        if len(matches) > MAX_TAB_MATCHES:
+            raise ValidationError(
+                f'The "{label}" tab lists {len(matches)} pages to light up '
+                f"for. Keep it to {MAX_TAB_MATCHES}."
+            )
+        for match in matches:
+            if not match.startswith("/"):
+                raise ValidationError(
+                    f'"{match}" must be a path starting with / - it is matched '
+                    f"against the page being shown, not against a full URL.",
+                    detail=label,
+                )
+
+        if target == NAV_NOTIFICATIONS:
+            if not config.push_enabled:
+                raise ValidationError(
+                    f'The "{label}" tab opens the notifications screen, but '
+                    f"push notifications are switched off. Turn them on or "
+                    f"remove the tab."
+                )
+        elif target in NAV_NATIVE_TARGETS:
             needed = NAV_NATIVE_TARGETS[target]
             if needed not in features:
                 raise ValidationError(
@@ -485,18 +751,46 @@ def _str_list(data: dict[str, Any], key: str) -> list[str]:
     return [item for item in value if isinstance(item, str) and item.strip()]
 
 
-def _tab_list(data: dict[str, Any], key: str) -> tuple[dict[str, str], ...]:
+def _topic_list(data: dict[str, Any], key: str) -> tuple[dict[str, Any], ...]:
+    value = data.get(key)
+    if not isinstance(value, list):
+        return ()
+    topics = []
+    for item in value:
+        if isinstance(item, dict):
+            topics.append(
+                {
+                    "id": str(item.get("id", "")),
+                    "label": str(item.get("label", "")),
+                    "default": bool(item.get("default", False)),
+                }
+            )
+    return tuple(topics)
+
+
+def _tab_list(data: dict[str, Any], key: str) -> tuple[dict[str, Any], ...]:
     value = data.get(key)
     if not isinstance(value, list):
         return ()
     tabs = []
     for item in value:
         if isinstance(item, dict):
+            # "match" is the one value on a tab that is not a string. Coercing
+            # it the way the others are would turn ["/account"] into the string
+            # "['/account']", which matches nothing, forever, and says nothing
+            # about why.
+            raw = item.get("match")
+            matches = (
+                [m.strip() for m in raw if isinstance(m, str) and m.strip()]
+                if isinstance(raw, list)
+                else []
+            )
             tabs.append(
                 {
                     "label": str(item.get("label", "")),
                     "icon": str(item.get("icon", "")),
                     "target": str(item.get("target", "")),
+                    "match": matches,
                 }
             )
     return tuple(tabs)

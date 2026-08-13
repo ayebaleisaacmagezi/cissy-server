@@ -384,3 +384,294 @@ class TopBarTest(unittest.TestCase):
         source = template.main_dart(make(features=("Native sharing",), **self.NAV))
         self.assertIn("Text(appTitle)", source)
         self.assertIn("Icons.share_outlined", source)
+
+
+class SitePolicyTest(unittest.TestCase):
+    """Taking the website's own navigation down inside the app."""
+
+    def dart(self, **overrides) -> str:
+        return template.main_dart(make(**overrides))
+
+    def test_nothing_is_emitted_when_nothing_is_configured(self):
+        # An unused constant is dead code, which fails the generated
+        # project's own lint run.
+        source = self.dart()
+        self.assertNotIn("sitePolicyScript", source)
+        self.assertNotIn("dart:collection", source)
+
+    def test_selectors_become_one_stylesheet(self):
+        source = self.dart(hide_selectors=(".mobile-nav", "#footer .menu"))
+        self.assertIn(
+            '.mobile-nav, #footer .menu { display: none !important; }', source
+        )
+        self.assertIn("cissy-site-policy", source)
+
+    def test_the_script_runs_at_document_start(self):
+        # Waiting for the load to finish means the site's own bar paints and
+        # then vanishes on every page.
+        source = self.dart(hide_selectors=(".mobile-nav",))
+        self.assertIn("UserScriptInjectionTime.AT_DOCUMENT_START", source)
+        self.assertIn("import 'dart:collection';", source)
+
+    def test_the_script_is_reapplied_when_a_load_finishes(self):
+        # Single-page navigation replaces the DOM without a real load.
+        source = self.dart(hide_selectors=(".mobile-nav",))
+        self.assertIn("evaluateJavascript(source: sitePolicyScript)", source)
+
+    def test_it_does_nothing_off_an_allowed_domain(self):
+        # The app is not entitled to restyle somebody else's page.
+        source = self.dart(hide_selectors=(".mobile-nav",))
+        self.assertIn("if (!permitted) return;", source)
+        self.assertIn("if (!_isAllowedHost(host))", source)
+
+    def test_the_body_class_waits_for_a_body(self):
+        # At document start there is no body yet.
+        source = self.dart(body_class="web2app-native")
+        self.assertIn('classList.add(marker)', source)
+        self.assertIn("MutationObserver", source)
+
+    def test_a_body_class_alone_emits_no_stylesheet(self):
+        source = self.dart(body_class="web2app-native")
+        self.assertIn("sitePolicyScript", source)
+        self.assertNotIn("cissy-site-policy", source)
+
+    def test_the_url_flag_reaches_the_home_url(self):
+        source = self.dart(url_flag="source=web2app")
+        self.assertIn(
+            'const homeUrl = "https://portal.cissytech.com?source=web2app";',
+            source,
+        )
+
+    def test_the_url_flag_joins_an_existing_query(self):
+        source = template.main_dart(
+            make(website_url="https://portal.cissytech.com/?a=b",
+                 url_flag="source=web2app")
+        )
+        self.assertIn("?a=b&source=web2app", source)
+
+    def test_the_url_flag_reaches_navigation_tabs(self):
+        source = self.dart(
+            url_flag="source=web2app",
+            nav_style="bottom",
+            nav_tabs=(
+                {"label": "Home", "icon": "home", "target": "/"},
+                {"label": "Shop", "icon": "storefront", "target": "/shop"},
+            ),
+        )
+        self.assertIn('"https://portal.cissytech.com/shop?source=web2app"', source)
+
+    def test_file_inputs_are_still_disabled_alongside_it(self):
+        # Two policies in one method; neither may displace the other.
+        source = self.dart(hide_selectors=(".mobile-nav",))
+        self.assertIn('input[type="file"]', source)
+        self.assertIn("sitePolicyScript", source)
+
+    def test_uploads_leave_only_the_site_policy(self):
+        source = self.dart(
+            features=("File upload",), hide_selectors=(".mobile-nav",)
+        )
+        self.assertNotIn('input[type="file"]', source)
+        self.assertIn("sitePolicyScript", source)
+
+
+class TabEchoTest(unittest.TestCase):
+    """Lighting up the tab a page belongs to, without switching to it."""
+
+    def dart(self, tabs) -> str:
+        return template.main_dart(make(nav_style="bottom", nav_tabs=tabs))
+
+    PLAIN = (
+        {"label": "Home", "icon": "home", "target": "/"},
+        {"label": "Shop", "icon": "storefront", "target": "/shop"},
+    )
+    MATCHED = (
+        {"label": "Home", "icon": "home", "target": "/"},
+        {"label": "Account", "icon": "person", "target": "/account",
+         "match": ["/profile", "/orders"]},
+    )
+
+    def test_a_tab_matches_its_own_path_without_being_told_to(self):
+        source = self.dart(self.PLAIN)
+        self.assertIn('navMatches = <List<String>>[["/"], ["/shop"]]', source)
+
+    def test_configured_paths_follow_the_tab_s_own(self):
+        source = self.dart(self.MATCHED)
+        self.assertIn('["/account", "/profile", "/orders"]', source)
+
+    def test_native_tabs_match_nothing(self):
+        source = template.main_dart(make(
+            features=("Saved items",),
+            nav_style="bottom",
+            nav_tabs=(
+                {"label": "Home", "icon": "home", "target": "/"},
+                {"label": "Saved", "icon": "bookmark", "target": "native:saved"},
+            ),
+        ))
+        self.assertIn('navMatches = <List<String>>[["/"], []]', source)
+
+    def test_the_bar_prefers_the_echo(self):
+        self.assertIn("selectedIndex: echoIndex ?? index", self.dart(self.PLAIN))
+
+    def test_a_tap_clears_the_echo(self):
+        # A tap is a decision; it outranks whatever the page was saying.
+        source = self.dart(self.PLAIN)
+        self.assertIn("echoIndex = null;", source)
+
+    def test_only_the_visible_tab_reports(self):
+        # Background tabs go on finishing loads of their own.
+        source = self.dart(self.PLAIN)
+        self.assertIn("if (from != index) {", source)
+
+    def test_single_page_route_changes_are_heard(self):
+        # pushState moves the address without a load.
+        self.assertIn("onUpdateVisitedHistory:", self.dart(self.PLAIN))
+
+    def test_nothing_is_emitted_without_navigation(self):
+        source = template.main_dart(make())
+        self.assertNotIn("navMatches", source)
+        self.assertNotIn("echoIndex", source)
+
+    def test_longest_match_wins(self):
+        # Otherwise a tab on "/" outranks every other tab by matching first.
+        self.assertIn("prefix.length > bestLength", self.dart(self.MATCHED))
+
+
+class PushTest(unittest.TestCase):
+    """The notification code in the generated app."""
+
+    def dart(self, **overrides) -> str:
+        base = dict(push_enabled=True, allowed_domains=("portal.cissytech.com",))
+        base.update(overrides)
+        return template.main_dart(make(**base))
+
+    def test_nothing_is_emitted_when_push_is_off(self):
+        source = template.main_dart(make())
+        for name in ("PushService", "firebase_messaging", "pendingPushUrl"):
+            self.assertNotIn(name, source)
+
+    def test_firebase_is_up_before_the_first_frame(self):
+        # The tap that started a terminated app is read during initialise, so
+        # doing it after runApp loses it.
+        source = self.dart()
+        self.assertIn("Future<void> main() async {", source)
+        self.assertIn("await Firebase.initializeApp();", source)
+        self.assertIn("await PushService.initialise();", source)
+
+    def test_main_stays_synchronous_without_push(self):
+        self.assertIn("void main() {", template.main_dart(make()))
+
+    def test_the_background_handler_is_a_top_level_entry_point(self):
+        # Inside the state class it compiles and then does nothing when the
+        # app is terminated, because that isolate has no widget tree.
+        source = self.dart()
+        self.assertIn("@pragma('vm:entry-point')", source)
+        self.assertIn("Future<void> pushBackgroundHandler(RemoteMessage", source)
+
+    def test_the_router_only_accepts_actions_it_knows(self):
+        # A payload arrives from the network and must not name arbitrary code.
+        self.assertIn("_actions = <String>{'open_url', 'none'}", self.dart())
+
+    def test_the_router_checks_the_destination_domain(self):
+        source = self.dart()
+        self.assertIn("allowedDomains.any(", source)
+        self.assertIn("PushRouter", source)
+
+    def test_topics_carry_their_defaults(self):
+        source = self.dart(push_topics=(
+            {"id": "general", "label": "General", "default": True},
+            {"id": "offers", "label": "Offers", "default": False},
+        ))
+        self.assertIn('"id": "general", "label": "General", "default": true', source)
+        self.assertIn('"default": false', source)
+
+    def test_the_prompt_text_is_the_configured_one(self):
+        source = self.dart(push_prompt_title="Hear first",
+                           push_prompt_body="Order updates and offers.")
+        self.assertIn('const pushPromptTitle = "Hear first";', source)
+        self.assertIn("Order updates and offers.", source)
+
+    def test_the_prompt_has_a_default_when_nothing_is_set(self):
+        self.assertIn('const pushPromptTitle = "Stay updated";', self.dart())
+
+    def test_a_foreground_notification_uses_the_local_plugin(self):
+        source = self.dart(push_foreground="notification")
+        self.assertIn("_local.show(", source)
+        self.assertNotIn("showMaterialBanner", source)
+
+    def test_a_foreground_banner_needs_a_messenger_key(self):
+        source = self.dart(push_foreground="banner")
+        self.assertIn("final pushMessengerKey", source)
+        self.assertIn("scaffoldMessengerKey: pushMessengerKey", source)
+        self.assertIn("showMaterialBanner", source)
+
+    def test_silent_shows_nothing_but_still_records(self):
+        source = self.dart(push_foreground="silent")
+        self.assertNotIn("_local.show(", source)
+        self.assertNotIn("showMaterialBanner", source)
+        self.assertIn("PushInbox.record", source)
+
+    def test_no_endpoint_means_the_app_never_phones_anywhere(self):
+        self.assertIn('const pushTokenEndpoint = "";', self.dart())
+
+    def test_an_endpoint_is_posted_to(self):
+        source = self.dart(push_token_endpoint="https://portal.cissytech.com/t")
+        self.assertIn('const pushTokenEndpoint = "https://portal.cissytech.com/t";',
+                      source)
+        self.assertIn("postUrl(Uri.parse(pushTokenEndpoint))", source)
+
+    def test_the_prompt_waits_for_a_page_to_load(self):
+        # Both platforms give an app one chance, and a refusal is permanent.
+        source = self.dart()
+        self.assertIn("await _maybeAskAboutPush();", source)
+        self.assertIn("bool pushPromptShown = false;", source)
+
+    def test_the_inbox_tab_becomes_a_screen(self):
+        source = self.dart(
+            nav_style="bottom",
+            nav_tabs=(
+                {"label": "Home", "icon": "home", "target": "/"},
+                {"label": "Updates", "icon": "article",
+                 "target": "native:notifications"},
+            ),
+        )
+        self.assertIn("PushInboxScreen(key: inboxKey", source)
+        self.assertIn("inboxKey.currentState?.refresh()", source)
+
+    def test_push_adds_the_packages_it_needs(self):
+        pubspec = template.pubspec(make(push_enabled=True))
+        for package in ("firebase_core", "firebase_messaging",
+                        "flutter_local_notifications", "shared_preferences"):
+            self.assertIn(package, pubspec)
+
+    def test_push_asks_for_the_android_13_permission(self):
+        # Without it the app never gets to ask, and every message is dropped.
+        manifest = template.android_manifest(make(push_enabled=True))
+        self.assertIn("android.permission.POST_NOTIFICATIONS", manifest)
+
+    def test_push_declares_a_default_channel(self):
+        # A message arriving before the app has ever run needs somewhere to go,
+        # and no Dart has executed to create a channel at that point.
+        manifest = template.android_manifest(make(push_enabled=True))
+        self.assertIn("default_notification_channel_id", manifest)
+
+    def test_none_of_that_appears_without_push(self):
+        manifest = template.android_manifest(make())
+        self.assertNotIn("POST_NOTIFICATIONS", manifest)
+        self.assertNotIn("firebase", template.pubspec(make()))
+
+    def test_push_opens_the_bridge_even_without_share_or_location(self):
+        # Strategy B is the cheap one: the site reads the token from a page
+        # where it already knows who is signed in.
+        source = self.dart()
+        self.assertIn("addJavaScriptHandler", source)
+        self.assertIn("getPushToken", source)
+        self.assertIn("requestNotificationPermission", source)
+
+    def test_the_push_bridge_is_still_origin_gated(self):
+        source = self.dart()
+        self.assertIn("_bridgeOriginAllowed", source)
+        self.assertIn("'status': 'denied', 'message': 'Origin is not allowed.'",
+                      source)
+
+    def test_no_bridge_at_all_without_push_share_or_location(self):
+        self.assertNotIn("addJavaScriptHandler", template.main_dart(make()))
