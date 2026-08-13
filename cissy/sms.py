@@ -91,4 +91,4 @@ def build_sender(settings: Settings | None = None) -> Any:
 
 
 def verification_message(code: str, minutes: int, app_name: str = "CissyWeb2App") -> str:
-    return f"{code} is your {app_name} code. It expires in {minutes} minutes."
+    return f"Your {app_name} verification code is {code}. It expires in {minutes} minutes."
