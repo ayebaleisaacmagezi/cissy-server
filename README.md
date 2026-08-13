@@ -130,6 +130,18 @@ issued against a **username and an IP**: move the box or put a proxy with a
 different outbound address in front of it and payments stop while everything
 else keeps working.
 
+Which is why there is a command for it, to be run **on the server** after any
+deploy or move:
+
+```
+python3 server.py --check-collecto
+```
+
+It reads the wallet and SMS balances, which charges nothing and sends no prompt,
+and exits non-zero if the credentials are refused. It also warns when the SMS
+balance is empty, because verification codes are sent over the same account and
+a signup nobody can complete looks nothing like a billing problem.
+
 ## A note on signing keys
 
 Keystore passwords are never written to `config.json` and never committed. They

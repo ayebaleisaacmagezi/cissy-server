@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Entry point.
 
-    python3 server.py
+    python3 server.py                  start the server
+    python3 server.py --check-collecto prove the payment credentials work from
+                                       this machine, and change nothing
 
 Reads its configuration from the environment:
 
@@ -75,7 +77,25 @@ def bootstrap(app: Application, root: Path) -> None:
         print(f"Adopted {moved} app(s) left over from before accounts existed.")
 
 
+def check_collecto() -> int:
+    """Answer "will payments work from this box" without charging anybody.
+
+    Its own command because the key is tied to a source IP, so this is a
+    question about the machine as much as about the credentials, and it has to
+    be asked from the machine itself after every move or deploy.
+    """
+    from cissy.collecto import Settings, checkup
+
+    ok, lines = checkup(Settings.from_env())
+    for line in lines:
+        print(line, file=sys.stdout if ok else sys.stderr)
+    return 0 if ok else 1
+
+
 def main() -> int:
+    if "--check-collecto" in sys.argv[1:]:
+        return check_collecto()
+
     host = os.environ.get("CISSY_HOST", "127.0.0.1")
     port = int(os.environ.get("CISSY_PORT", "8080"))
     root = Path(os.environ.get("CISSY_ROOT", HERE))

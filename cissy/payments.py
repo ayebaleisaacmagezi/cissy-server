@@ -292,6 +292,27 @@ class PaymentService:
             )
             return self.store.save(payment)
 
+        if reply.refused:
+            # The gateway declined the call outright, so no prompt reached any
+            # handset and nothing can arrive later. Leaving it open would chase
+            # a payment that does not exist for two minutes and then tell the
+            # customer they were too slow to approve a prompt they never got.
+            return self.store.save(
+                replace(
+                    payment,
+                    status=FAILED,
+                    # Their wording names a key, an IP or a disabled account.
+                    # That is an operator's problem, and the trail is where
+                    # operators look; the customer gets something they can act on.
+                    message=(
+                        "We could not start that payment. Nothing was charged, "
+                        "so please try again."
+                    ),
+                    trail=payment.trail
+                    + (f"{_stamp()} · requestToPay refused: {reply.message}",),
+                )
+            )
+
         note = reply.message or ("prompt sent" if reply.accepted else "no confirmation")
         payment = replace(
             payment,

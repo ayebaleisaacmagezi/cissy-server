@@ -50,6 +50,13 @@ MAX_ATTEMPTS = 3
 _SUCCESS = {"successful", "success", "completed", "confirmed", "paid"}
 _FAILED = {"failed", "failure", "declined", "cancelled", "canceled", "rejected"}
 
+# Words that mean "this call was refused", which is not the same as "the payment
+# failed". A bad key, a wrong source IP or a disabled account comes back as
+# HTTP 200 with `status_message: "success"` on the envelope and the real answer
+# buried at `data.status: "error"` - so it is indistinguishable from a prompt
+# nobody has answered yet unless the word is read out of the body.
+_REFUSED = {"error", "invalid", "unauthorized", "unauthorised", "forbidden"}
+
 PENDING = "pending"
 SUCCESSFUL = "successful"
 FAILED = "failed"
@@ -78,6 +85,15 @@ class Reply:
 
     message: str = ""
     transaction_id: str = ""
+
+    refused: bool = False
+    """The gateway explicitly declined to process the call at all.
+
+    Distinct from a failed payment: nothing was attempted, so nothing can have
+    moved. Only ever set from a word the gateway actually sent - never inferred
+    from silence, which stays pending.
+    """
+
     raw: dict[str, Any] = field(default_factory=dict)
 
     @property
@@ -275,12 +291,16 @@ def _read(data: dict[str, Any], flag: str) -> Reply:
     """
     inner = data.get("data")
     inner = inner if isinstance(inner, dict) else {}
-    word = str(inner.get("status") or data.get("status") or "").strip().lower()
+    # Only the inner word is read for refusal. The envelope's `status` is an
+    # HTTP-style integer and its `status_message` says "success" even when the
+    # body underneath is an error, so neither can be trusted here.
+    word = str(inner.get("status") or "").strip().lower()
     return Reply(
         accepted=bool(inner.get(flag, False)),
-        status=normalise_status(word),
+        status=normalise_status(word or data.get("status")),
         message=str(inner.get("message") or data.get("status_message") or ""),
         transaction_id=str(inner.get("transactionId") or ""),
+        refused=word in _REFUSED,
         raw=data,
     )
 
@@ -298,6 +318,76 @@ def normalise_status(word: Any) -> str:
     if text in _FAILED:
         return FAILED
     return PENDING
+
+
+def checkup(settings: Settings) -> tuple[bool, list[str]]:
+    """Prove the credentials work from *this* machine, without moving money.
+
+    `currentBalance` is a read: no prompt on anyone's handset, no debit, no SMS
+    spent. It still exercises the combination that actually breaks - the key,
+    the username, and the source IP their WAF sees - because the key is issued
+    against an address. Credentials that worked yesterday stop working the day
+    the box moves or gains a proxy, and without this the first thing to notice
+    is a customer who cannot pay.
+    """
+    if not settings.live:
+        return False, [
+            "Not configured. Payments and SMS are running against the simulator.",
+            "Set CISSY_COLLECTO_USERNAME and CISSY_COLLECTO_KEY to go live.",
+        ]
+
+    gateway = CollectoGateway(settings)
+    lines = [f"Account {settings.username} at {settings.base_url}"]
+    ok = True
+
+    for kind in ("sms", "wallet"):
+        try:
+            reply = gateway._post(
+                "currentBalance", {"type": kind}, flag="currentBalance", repeatable=True
+            )
+        except GatewayError as error:
+            ok = False
+            lines.append(f"  {kind}: rejected - {error.message}")
+            continue
+
+        if reply.refused or not reply.accepted:
+            ok = False
+            note = reply.message or "nothing came back"
+            lines.append(f"  {kind}: refused - {note}")
+            continue
+
+        amount = _balance(reply)
+        lines.append(f"  {kind}: {reply.message or 'ok'}")
+        if kind == "sms" and amount == 0:
+            # Not a credential problem, so it does not fail the check, but it
+            # does mean nobody can finish a signup: the verification code goes
+            # out over sendSingleSMS, which spends this balance.
+            lines.append("  ! No SMS balance. Verification codes will not send.")
+
+    if not ok:
+        lines.append(
+            "An IP mismatch is the usual cause. The key is issued against this "
+            "machine's outbound address - check it still matches."
+        )
+    return ok, lines
+
+
+def _balance(reply: Reply) -> float | None:
+    """The number out of a balance reply, or None if it did not carry one.
+
+    Their amount arrives as a comma-formatted string, so it needs stripping
+    before it is a number.
+    """
+    inner = reply.raw.get("data")
+    inner = inner if isinstance(inner, dict) else {}
+    holder = inner.get("balance")
+    holder = holder if isinstance(holder, dict) else {}
+    if holder.get("amount") is None:
+        return None
+    try:
+        return float(str(holder["amount"]).replace(",", ""))
+    except ValueError:
+        return None
 
 
 def _backoff(attempt: int) -> float:

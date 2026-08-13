@@ -11,6 +11,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from cissy import collecto, payments
 from cissy.collecto import DemoGateway, Reply
@@ -85,6 +86,91 @@ class ReadingReplies(unittest.TestCase):
         self.assertEqual(reply.status, collecto.PENDING)
         self.assertFalse(reply.settled)
 
+    def test_a_refusal_is_not_a_pending_payment(self):
+        # Their real shape for a bad key or a wrong source IP: HTTP 200, an
+        # envelope that says "success", and the actual answer hidden two levels
+        # down. Read only the envelope and this looks like an unanswered prompt.
+        reply = collecto._read(
+            {
+                "status": 200,
+                "status_message": "success",
+                "data": {
+                    "status": "error",
+                    "message": "API key/IP mismatch or user is inactive/deleted.",
+                },
+            },
+            "requestToPay",
+        )
+        self.assertTrue(reply.refused)
+        self.assertFalse(reply.accepted)
+
+    def test_silence_is_never_read_as_a_refusal(self):
+        # Refusal has to come from a word they sent. A reply with no status at
+        # all is missing information, which stays pending.
+        reply = collecto._read({"data": {"requestToPay": True}}, "requestToPay")
+        self.assertFalse(reply.refused)
+        self.assertEqual(reply.status, collecto.PENDING)
+
+
+class CheckingTheCredentials(unittest.TestCase):
+    """`checkup` is what stands between a moved server and silent lost sales."""
+
+    def _balances(self, *replies):
+        return mock.patch.object(
+            collecto.CollectoGateway, "_post", side_effect=list(replies)
+        )
+
+    def _ok(self, message, amount="4,855.00"):
+        return Reply(
+            accepted=True,
+            status=collecto.PENDING,
+            message=message,
+            raw={"data": {"balance": {"type": "SMS", "amount": amount}}},
+        )
+
+    def test_an_unconfigured_server_is_not_reported_as_healthy(self):
+        ok, lines = collecto.checkup(collecto.Settings())
+        self.assertFalse(ok)
+        self.assertIn("simulator", " ".join(lines))
+
+    def test_healthy_credentials_pass(self):
+        settings = collecto.Settings(username="web2app", api_key="k")
+        with self._balances(self._ok("Your SMS balance is 4,855.00"), self._ok("ok")):
+            ok, lines = collecto.checkup(settings)
+        self.assertTrue(ok)
+        self.assertIn("web2app", lines[0])
+
+    def test_a_refusal_names_the_likely_cause(self):
+        # The one that matters: the key is issued against an IP, so this is what
+        # a moved box or a new proxy looks like.
+        refused = Reply(
+            accepted=False,
+            status=collecto.PENDING,
+            refused=True,
+            message="API key/IP mismatch or user is inactive/deleted.",
+        )
+        settings = collecto.Settings(username="web2app", api_key="k")
+        with self._balances(refused, refused):
+            ok, lines = collecto.checkup(settings)
+        self.assertFalse(ok)
+        self.assertIn("IP", " ".join(lines))
+
+    def test_an_empty_sms_balance_is_called_out(self):
+        # Credentials are fine, but nobody can complete a signup.
+        settings = collecto.Settings(username="web2app", api_key="k")
+        with self._balances(self._ok("Your SMS balance is 0", amount="0"), self._ok("ok")):
+            ok, lines = collecto.checkup(settings)
+        self.assertTrue(ok)
+        self.assertIn("Verification codes will not send", " ".join(lines))
+
+    def test_a_comma_formatted_balance_is_still_a_number(self):
+        self.assertEqual(collecto._balance(self._ok("x", amount="4,855.00")), 4855.0)
+
+    def test_a_reply_with_no_balance_does_not_explode(self):
+        self.assertIsNone(
+            collecto._balance(Reply(accepted=True, status=collecto.PENDING))
+        )
+
 
 class StartingAPayment(ServiceCase):
     def test_the_record_exists_before_the_gateway_is_called(self):
@@ -111,6 +197,37 @@ class StartingAPayment(ServiceCase):
         # Even if requestToPay claims success, only the status endpoint counts.
         self.assertEqual(payment.status, OPEN)
         self.assertFalse(Subscription(self.root / "subscription.json").read()["active"])
+
+    def test_a_refused_call_fails_the_payment_immediately(self):
+        # The failure this prevents: auth breaks, every prompt silently never
+        # sends, and two minutes later each customer is told they were too slow
+        # to approve something that never reached their phone.
+        gateway = FakeGateway(
+            on_pay=Reply(
+                accepted=False,
+                status=collecto.PENDING,
+                refused=True,
+                message="API key/IP mismatch or user is inactive/deleted.",
+            )
+        )
+        service = self.service(gateway)
+        payment = service.start(plan_id="starter", phone="0772000000")
+
+        self.assertEqual(payment.status, FAILED)
+        self.assertIn("Nothing was charged", payment.message)
+        # The customer is not shown a sentence about API keys, but an operator
+        # reading the trail can see exactly what the gateway said.
+        self.assertNotIn("API key", payment.message)
+        self.assertIn("API key/IP mismatch", payment.trail[-1])
+
+    def test_a_refused_payment_is_not_chased(self):
+        gateway = FakeGateway(
+            on_pay=Reply(accepted=False, status=collecto.PENDING, refused=True)
+        )
+        service = self.service(gateway)
+        service.start(plan_id="starter", phone="0772000000")
+        self.assertEqual(service.sweep(), 0)
+        self.assertEqual(gateway.status_calls, [])
 
     def test_the_phone_number_is_normalised_before_sending(self):
         gateway = FakeGateway()
