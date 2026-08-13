@@ -2145,7 +2145,17 @@ function payDialog(plan, mode) {
     el('option', { value: 'garbage', text: 'Collecto returns something that is not JSON' }),
   ]);
 
+  const send = el('button', { class: 'btn primary', text: 'Send prompt' });
+
   const submit = async () => {
+    if (send.disabled) return;
+    // Dots only for as long as the app is the one working. The handset takes a
+    // few seconds to buzz, and telling somebody to check a phone that has not
+    // rung yet is how a working flow gets read as broken - so the modal holds
+    // here until the send comes back, then hands over to the payment page.
+    send.disabled = true;
+    clear(send).append(el('span', { class: 'dots' },
+      [0, 1, 2, 3, 4].map(() => el('i', {}))));
     try {
       const body = { plan: plan.id, phone: phone.value() };
       if (mode === 'demo') body.scenario = scenario.value;
@@ -2153,9 +2163,12 @@ function payDialog(plan, mode) {
       close();
       go('#/billing/pay/' + payment.reference);
     } catch (error) {
+      send.disabled = false;
+      clear(send).append('Send prompt');
       toast(error.message, true);
     }
   };
+  send.addEventListener('click', submit);
 
   const close = openModal(
     `${plan.name} - ${money(plan.amount)}`,
@@ -2169,7 +2182,7 @@ function payDialog(plan, mode) {
     ].filter(Boolean),
     [
       el('button', { class: 'btn ghost', text: 'Cancel', onclick: () => close() }),
-      el('button', { class: 'btn primary', text: 'Send prompt', onclick: submit }),
+      send,
     ],
   );
 }
@@ -2200,15 +2213,23 @@ async function showPayment(reference) {
     clear(body).append(
       el('div', { class: 'cols' }, [
         el('div', {}, [
-          el('div', { class: 'paycard' }, [
-            el('h3', { class: 'paycard-h', text: 'What the server has done' }),
-            el('div', { class: 'console' }, payment.trail.map((line) =>
-              el('div', { class: 'l', text: line }))),
-          ]),
+          // The trail only arrives for admins. For everybody else it is the
+          // gateway's own words about keys and IP addresses, which is not a
+          // customer's business, so they get the same journey in plain steps.
+          payment.trail
+            ? el('div', { class: 'paycard' }, [
+                el('h3', { class: 'paycard-h', text: 'What the server has done' }),
+                el('div', { class: 'console' }, payment.trail.map((line) =>
+                  el('div', { class: 'l', text: line }))),
+              ])
+            : el('div', { class: 'paycard' }, [
+                el('h3', { class: 'paycard-h', text: 'Where this is' }),
+                stepList(payment),
+              ]),
         ]),
         el('div', {}, [
           data.prompt ? handsetPanel(data.prompt, payment) : null,
-          el('div', { class: 'paycard' }, [
+          payment.trail ? el('div', { class: 'paycard' }, [
             el('h3', { class: 'paycard-h', text: 'Details' }),
             kv('Status', payment.status),
             kv('Checks made', String(payment.checks ?? 0)),
@@ -2217,7 +2238,7 @@ async function showPayment(reference) {
             payment.status === 'pending' && Number.isFinite(payment.expires_in)
               ? kv('Gives up in', Math.max(0, payment.expires_in) + 's')
               : null,
-          ].filter(Boolean)),
+          ].filter(Boolean)) : null,
           el('button', {
             class: 'btn full',
             text: 'Check now',
@@ -2267,11 +2288,45 @@ function statusBanner(payment) {
       'again sends a fresh prompt.',
     ]);
   }
+  // Pending is the state worth designing. Nothing here is working on their
+  // behalf - the payment moves when they enter a PIN, and a spinner would say
+  // the opposite. So: what to do, where, and how long they have.
+  const left = Number.isFinite(payment.expires_in) ? payment.expires_in : 0;
   return el('div', { class: 'banner info' }, [
     el('b', { text: 'Check your phone' }),
-    `A prompt was sent to ${payment.phone || 'your phone'}. Enter your PIN there to approve ` +
-    `${money(payment.amount)}. Safe to close this page - the server keeps checking.`,
+    `Enter your mobile money PIN on ${prettyPhone(payment.phone)} to pay ` +
+    `${money(payment.amount)}.`,
+    left > 0 ? el('div', { class: 'countdown' }, [
+      el('b', { text: clock(left) }),
+      ' left to approve. Safe to close this page - the server keeps checking.',
+    ]) : null,
   ]);
+}
+
+/* The same journey the console shows an admin, in the three steps a customer
+ * cares about. Which step is current is the whole point: the middle one is
+ * where nothing moves until they act. */
+function stepList(payment) {
+  const paid = payment.status === 'successful';
+  const over = payment.status === 'failed' || payment.status === 'abandoned';
+  return el('div', { class: 'steps' }, [
+    ['Prompt sent to your phone', 'done'],
+    ['You enter your PIN', paid ? 'done' : over ? 'stopped' : 'now'],
+    ['Plan switched on', paid ? 'done' : 'todo'],
+  ].map(([label, state]) =>
+    el('div', { class: 'step ' + state }, [el('i', { class: 'dot' }), label])));
+}
+
+function clock(seconds) {
+  const whole = Math.max(0, Math.floor(seconds));
+  return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')}`;
+}
+
+/* 256772145903 back into the form somebody recognises as their own number. */
+function prettyPhone(msisdn) {
+  const digits = String(msisdn || '').replace(/\D/g, '').replace(/^256/, '');
+  if (digits.length !== 9) return msisdn || 'your phone';
+  return '0' + digits.slice(0, 2) + ' ' + digits.slice(2, 5) + ' ' + digits.slice(5);
 }
 
 /* The pretend handset. It exists only in demo mode and the server refuses the

@@ -820,7 +820,10 @@ class Application:
                 }
                 for plan in PLANS.values()
             ],
-            "payments": [p.to_json() for p in self.payments.store.for_owner(user.id)],
+            "payments": [
+                self._payment_json(p, user)
+                for p in self.payments.store.for_owner(user.id)
+            ],
         }
 
     def start_payment(self, request: Request) -> dict[str, Any]:
@@ -851,10 +854,26 @@ class Application:
             self.gateway.set_scenario(payment.reference, scenario)
         return {"payment": payment.to_json()}
 
+    def _payment_json(self, payment: Any, user: User) -> dict[str, Any]:
+        """A payment as the person looking at it is allowed to see it.
+
+        The trail is written for whoever has to work out why a payment went
+        wrong, so it carries the gateway's own words - which name API keys, IP
+        mismatches and disabled accounts. That belongs to an operator. The
+        counters and the gateway id are ours too: a customer needs to know where
+        their money is, not how many times we asked about it.
+        """
+        data = payment.to_json()
+        if user.is_admin:
+            return data
+        for key in ("trail", "checks", "transaction_id", "mode", "owner"):
+            data.pop(key, None)
+        return data
+
     def get_payment(self, request: Request) -> dict[str, Any]:
         payment = self._own_payment(request)
         return {
-            "payment": payment.to_json(),
+            "payment": self._payment_json(payment, request.owner),
             "prompt": self._demo_prompt(payment.reference),
             "user": request.owner.to_json(),
         }
@@ -880,7 +899,7 @@ class Application:
         reference = self._own_payment(request).reference
         payment = self.payments.poll(reference)
         return {
-            "payment": payment.to_json(),
+            "payment": self._payment_json(payment, request.owner),
             "prompt": self._demo_prompt(reference),
             "user": request.owner.to_json(),
         }
@@ -898,7 +917,7 @@ class Application:
         self.gateway.act(reference, action)
         payment = self.payments.poll(reference)
         return {
-            "payment": payment.to_json(),
+            "payment": self._payment_json(payment, request.owner),
             "prompt": self._demo_prompt(reference),
             "user": self.accounts.by_id(request.owner.id).to_json(),
         }

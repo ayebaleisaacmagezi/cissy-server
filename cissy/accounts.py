@@ -409,7 +409,21 @@ class Accounts:
         Deliberately a single statement with the check in the WHERE clause. Read
         the count, decide, then write would let two builds started at the same
         moment both pass the check and both spend the last one.
+
+        The month is checked first and separately. It is a date rather than a
+        counter, so nothing races on it, and without it a plan whose thirty days
+        ran out keeps building on whatever allowance was left - which is a
+        lapsed subscription that still works.
         """
+        current = self.by_id(user_id)
+        if current is None:
+            raise NotFoundError("That account no longer exists.")
+        if current.plan_expired:
+            raise ForbiddenError(
+                "Your plan has ended. Everything you have already built stays "
+                "downloadable - pay again to keep building."
+            )
+
         with self._lock:
             cursor = self._db.execute(
                 "UPDATE users SET builds_used = builds_used + 1 "

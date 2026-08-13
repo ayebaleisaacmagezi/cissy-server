@@ -448,6 +448,62 @@ class BillingTest(ServerTestCase):
         self.assertNotIn("COLLECTO", body["error"])
         self.assertIn("not switched on", body["error"])
 
+    def test_the_trail_never_reaches_a_customer(self):
+        # The trail carries the gateway's own words, and those name API keys,
+        # IP mismatches and disabled accounts. An admin needs them to work out
+        # why a payment failed. A customer is owed none of it, and the page
+        # they see would otherwise print it under "What the server has done".
+        _, body = self.pay()
+        reference = body["payment"]["reference"]
+
+        # The payment belongs to the admin, so read it as the admin first.
+        _, mine = self.request("GET", f"/api/billing/payments/{reference}")
+        self.assertIn("trail", mine["payment"])
+
+        # Now the same account demoted to an ordinary customer.
+        _, session = self.request("GET", "/api/auth/session")
+        self.app.accounts.set_admin(session["user"]["id"], False)
+        _, theirs = self.request("GET", f"/api/billing/payments/{reference}")
+        for leaked in ("trail", "checks", "transaction_id", "mode"):
+            self.assertNotIn(leaked, theirs["payment"])
+        # What they do need is still there.
+        self.assertEqual(theirs["payment"]["status"], "pending")
+        self.assertEqual(theirs["payment"]["amount"], PLANS["starter"].amount)
+
+
+class ExpiredPlanTest(ServerTestCase):
+    """A month that has ended is a month that has ended."""
+
+    def test_a_lapsed_plan_cannot_start_a_build(self):
+        # The allowance still has builds in it. They belong to a month that is
+        # over, and spending them is a subscription that quietly outlives the
+        # payment for it.
+        _, body = self.request("GET", "/api/auth/session")
+        user_id = body["user"]["id"]
+        self.app.accounts.activate_plan(
+            user_id, plan="starter", builds=25,
+            until="2020-01-01T00:00:00+00:00",
+        )
+
+        user = self.app.accounts.by_id(user_id)
+        self.assertTrue(user.plan_expired)
+        self.assertEqual(user.builds_left, 25)
+
+        with self.assertRaises(Exception) as caught:
+            self.app.accounts.spend_build(user_id)
+        self.assertIn("plan has ended", str(caught.exception))
+        # Refused, not silently charged for.
+        self.assertEqual(self.app.accounts.by_id(user_id).builds_used, 0)
+
+    def test_a_live_plan_still_builds(self):
+        _, body = self.request("GET", "/api/auth/session")
+        user_id = body["user"]["id"]
+        self.app.accounts.activate_plan(
+            user_id, plan="starter", builds=25,
+            until="2099-01-01T00:00:00+00:00",
+        )
+        self.assertEqual(self.app.accounts.spend_build(user_id).builds_used, 1)
+
 
 class IsolationTest(ServerTestCase):
     """One customer, one workspace, and no way to name somebody else's."""
