@@ -501,7 +501,7 @@ function planCard() {
   const tone = left === 0 ? 'out' : left <= 1 ? 'low' : '';
 
   return el('div', { class: 'plancard ' + tone }, [
-    el('b', { text: user.plan === 'trial' ? 'Free trial' : user.plan_name || 'Your plan' }),
+    el('b', { text: user.plan_name }),
     el('div', { class: 'mut', text: `${left} build${left === 1 ? '' : 's'} left of ${total}` }),
     el('div', { class: 'meter' }, [el('i', { style: `width:${share}%` })]),
     el('button', {
@@ -523,7 +523,7 @@ function renderAccount() {
   box.append(el('button', {
     class: 'avatar', text: initials, title: state.user.name,
     onclick: () => openModal(state.user.name, state.user.phone, [
-      kv('Plan', state.user.plan === 'trial' ? 'Free trial' : state.user.plan),
+      kv('Plan', state.user.plan_name),
       kv('Builds left', `${state.user.builds_left ?? 0} of ${state.user.builds_limit ?? 0}`),
       state.user.plan_until ? kv('Renews', shortDate(state.user.plan_until)) : null,
     ].filter(Boolean), [
@@ -2070,23 +2070,30 @@ async function showBilling() {
       ]))),
   );
 
-  if (data.payments.length) {
+  // Only what was actually paid for, and only for people who have paid. An
+  // attempt nobody approved is not a thing a customer needs listed back at
+  // them, and a reference is our key, not something they can use.
+  const paid = data.payments.filter((payment) => payment.status === 'successful');
+  if (paid.length) {
     content.append(
-      el('h2', { class: 'sec', text: 'Payments' }),
+      el('h2', { class: 'sec', text: 'Receipts' }),
       el('table', { class: 'apps' }, [
         el('thead', {}, [el('tr', {},
-          ['Reference', 'Plan', 'Amount', 'When', 'Status'].map((h) => el('th', { text: h })))]),
-        el('tbody', {}, data.payments.map((payment) =>
+          ['Plan', 'Amount', 'Paid'].map((h) => el('th', { text: h })))]),
+        el('tbody', {}, paid.map((payment) =>
           el('tr', { class: 'row', onclick: () => go('#/billing/pay/' + payment.reference) }, [
-            el('td', { class: 'app-url mono', text: payment.reference }),
-            el('td', { text: payment.plan }),
+            el('td', { text: planName(data.plans, payment.plan) }),
             el('td', { text: money(payment.amount) }),
             el('td', { class: 'app-url', text: shortDate(payment.created_at) }),
-            el('td', {}, [paymentPill(payment.status)]),
           ]))),
       ]),
     );
   }
+}
+
+function planName(plans, id) {
+  const found = (plans || []).find((plan) => plan.id === id);
+  return found ? found.name : id;
 }
 
 function subscriptionCard(user) {
@@ -2106,16 +2113,9 @@ function subscriptionCard(user) {
     ]);
   }
   return el('div', { class: 'banner ok' }, [
-    el('b', { text: `${user.plan} - active` }),
+    el('b', { text: `${user.plan_name} - active` }),
     `${left}` + (user.plan_until ? `, renews by ${shortDate(user.plan_until)}.` : '.'),
   ]);
-}
-
-function paymentPill(status) {
-  const look = { successful: 'ok', failed: 'err', abandoned: 'warn' }[status] || 'warn';
-  const label = { successful: 'Paid', failed: 'Failed', abandoned: 'Not approved' }[status]
-    || 'Waiting';
-  return el('span', { class: 'pill ' + look }, [el('i', { class: 'dot' }), label]);
 }
 
 function payDialog(plan, mode) {
@@ -2349,7 +2349,7 @@ async function showAdmin() {
       el('td', {}, [user.is_admin
         ? el('span', { class: 'pill ok' }, [el('i', { class: 'dot' }), 'Admin'])
         : el('span', { class: 'pill ' + (user.plan === 'trial' ? 'warn' : 'ok') },
-            [el('i', { class: 'dot' }), user.plan === 'trial' ? 'Trial' : user.plan])]),
+            [el('i', { class: 'dot' }), user.plan_name])]),
       el('td', { text: `${user.builds_used ?? 0} / ${user.builds_limit ?? 0}` }),
       el('td', { text: megabytes(user.disk || 0) }),
       el('td', { style: 'text-align:right' }, [

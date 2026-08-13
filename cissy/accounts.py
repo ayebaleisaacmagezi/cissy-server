@@ -29,6 +29,7 @@ from typing import Any, Iterable
 
 from .config import slugify
 from .errors import CissyError, ConflictError, NotFoundError, ValidationError
+from .payments import PLANS
 
 # Cost parameters for scrypt. n=16384 costs roughly 16 MB and a few tens of
 # milliseconds per hash, which is the right trade on a 4 GB box that will never
@@ -51,6 +52,18 @@ SMS_PER_IP_PER_HOUR = 10
 
 TRIAL_BUILDS = 3
 TRIAL_PLAN = "trial"
+
+
+def plan_label(plan: str) -> str:
+    """What a plan is called on a screen.
+
+    One place, because the alternative is every view deciding on its own what
+    "pro" is called and them slowly disagreeing.
+    """
+    if plan == TRIAL_PLAN:
+        return "Free trial"
+    known = PLANS.get(plan)
+    return known.name if known else plan
 
 
 class AuthError(CissyError):
@@ -166,6 +179,9 @@ class User:
             "verified": self.verified,
             "is_admin": self.is_admin,
             "plan": self.plan,
+            # The id is for the database. Sent alongside it so no screen has to
+            # decide for itself that "pro" should be read out as "Business".
+            "plan_name": plan_label(self.plan),
             "builds_used": self.builds_used,
             "builds_limit": self.builds_limit,
             "builds_left": self.builds_left,
