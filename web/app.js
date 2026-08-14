@@ -10,18 +10,6 @@
  * interpolated HTML would be an injection waiting to happen.
  */
 
-const FEATURES = [
-  ['File upload', 'Let the site open the file picker'],
-  ['Downloads', 'Save files to the device and open them'],
-  ['Native sharing', "Use the phone's share sheet"],
-  ['Pull to refresh', 'Swipe down to reload'],
-  ['Camera', 'Adds a permission prompt'],
-  ['Location', 'Adds a permission prompt'],
-  ['Deep links', 'Open the app from links to your domain'],
-  ['Saved items', 'Bookmarks and recently viewed, stored on the device'],
-  ['Settings screen', 'Native settings: clear cache, browsing data, about'],
-];
-
 // Mirrors NAV_ICONS in cissy/config.py - the set the generated app can render.
 const NAV_ICONS = ['home', 'storefront', 'menu_book', 'article', 'shopping_bag',
   'event', 'call', 'person', 'bookmark', 'download', 'settings', 'info'];
@@ -83,7 +71,6 @@ const ICONS = {
   webview: 'language',
   branding: 'image',
   studio: 'dashboard_customize',
-  features: 'tune',
   offline: 'cloud_off',
   signing: 'key',
   build: 'play_arrow',
@@ -488,7 +475,6 @@ const APP_PAGES = [
   ['webview', 'WebView', 'webview', 'The website the app wraps, and how it behaves.'],
   ['branding', 'Branding', 'branding', 'The icon and the splash screen.'],
   ['studio', 'Studio', 'studio', 'Modules, theme and navigation - with a live preview.'],
-  ['features', 'Features', 'features', 'The fine print for every module the app ships with.'],
   ['offline', 'Offline', 'offline', 'What the app does when the connection is gone.'],
   ['notifications', 'Notifications', 'notifications',
     'Push notifications, through your own Firebase project.'],
@@ -833,7 +819,6 @@ async function showAppPage(appId, section) {
     webview: () => webviewSection(draft, bind, markDirty),
     branding: () => brandingSection(app),
     studio: () => studioPage(app, draft, markDirty),
-    features: () => featuresSection(draft, markDirty),
     offline: () => offlineSection(draft, markDirty),
     notifications: () => notificationsSection(app, draft, markDirty),
     signing: () => signingSection(app),
@@ -1265,6 +1250,16 @@ function studioPage(app, draft, markDirty) {
         }),
       ...STUDIO_MODULES.map(([glyph, name, blurb]) =>
         modTile(glyph, name, blurb, has(name), () => setFeature(name, !has(name)))),
+
+      // Shown only once it applies, which is the one thing worth keeping from
+      // the Features page this replaced - there it sat on screen permanently,
+      // including for the apps it had nothing to do with.
+      ...(has('Camera') || has('Location') ? [el('p', {
+        class: 'hint', style: 'padding: 2px 6px 10px',
+        text: 'Camera and Location need a reason shown to the user. iOS '
+          + 'rejects builds without one, so a sensible default is written if '
+          + 'you leave it blank.',
+      })] : []),
 
       el('div', { class: 'modgroup', text: 'Coming soon' }),
       ...STUDIO_SOON.map(([glyph, name]) =>
@@ -1781,30 +1776,6 @@ function studioPage(app, draft, markDirty) {
       siteNavCard,
       offlineCard,
     ]),
-  ]);
-}
-
-function featuresSection(draft, markDirty) {
-  // Reads and writes draft.features rather than keeping its own copy, because
-  // the studio can also enable a module (adding a native tab switches it on)
-  // and the two must not overwrite each other.
-  return fieldset('features', '', [
-    el('div', { class: 'checks' }, FEATURES.map(([name, hint]) =>
-      el('label', { class: 'check' }, [
-        el('input', {
-          type: 'checkbox', checked: (draft.features || []).includes(name),
-          'data-feature': name,
-          onchange: (event) => {
-            const current = new Set(draft.features || []);
-            if (event.target.checked) current.add(name); else current.delete(name);
-            draft.features = [...current];
-            markDirty();
-          },
-        }),
-        el('span', {}, [name, el('div', { class: 'hint', text: hint })]),
-      ]))),
-    el('p', { class: 'hint', style: 'margin-bottom:14px',
-      text: 'Camera and Location need a reason shown to the user. iOS rejects builds without one, so a sensible default is written if you leave it blank.' }),
   ]);
 }
 
