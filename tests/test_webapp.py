@@ -47,7 +47,7 @@ class ServerTestCase(unittest.TestCase):
         if self.signed_in:
             self.session = self.sign_up("Grace Nabwire", "0700111222")
 
-    def sign_up(self, name, phone, password="a-good-password"):
+    def sign_up(self, name, phone, password="A-good-password1"):
         """Returns the session cookie for a fresh, verified account."""
         _, body = self.request(
             "POST", "/api/auth/signup",
@@ -323,7 +323,7 @@ class AuthTest(ServerTestCase):
         self.sign_up("Grace Nabwire", "0700111222")
         status, body = self.request(
             "POST", "/api/auth/signup",
-            {"name": "Impostor", "phone": "0700111222", "password": "let-me-in-now"},
+            {"name": "Impostor", "phone": "0700111222", "password": "Let-me-in-now3"},
             session="",
         )
         self.assertGreaterEqual(status, 400)
@@ -333,11 +333,11 @@ class AuthTest(ServerTestCase):
         self.sign_up("Grace Nabwire", "0700111222")
         _, missing = self.request(
             "POST", "/api/auth/login",
-            {"phone": "0755000000", "password": "whatever-this-is"}, session="",
+            {"phone": "0755000000", "password": "Whatever-this-is9"}, session="",
         )
         _, wrong = self.request(
             "POST", "/api/auth/login",
-            {"phone": "0700111222", "password": "not-the-password"}, session="",
+            {"phone": "0700111222", "password": "Not-the-password9"}, session="",
         )
         # Identical, so this endpoint cannot be used to find out which numbers
         # have accounts.
@@ -348,6 +348,148 @@ class AuthTest(ServerTestCase):
         self.request("POST", "/api/auth/logout", session=session)
         status, _ = self.request("GET", "/api/apps", session=session)
         self.assertEqual(status, 401)
+
+    def forgot(self, phone):
+        """The reset code, read the way the demo channel hands it back."""
+        _, body = self.request(
+            "POST", "/api/auth/forgot", {"phone": phone}, session=""
+        )
+        return body
+
+    def test_a_reset_code_sets_a_new_password_and_signs_you_in(self):
+        self.sign_up("Grace Nabwire", "0700111222")
+        code = self.forgot("0700111222")["code"]
+        status, body, cookie = self.raw(
+            "POST", "/api/auth/reset",
+            {"phone": "0700111222", "code": code, "password": "A-brand-new-one2"},
+            session="",
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(body["user"]["name"], "Grace Nabwire")
+        # The cookie that comes back is a working session, so nobody has to log
+        # in again immediately after proving they hold the phone.
+        session = cookie.split(";")[0]
+        self.assertEqual(self.request("GET", "/api/apps", session=session)[0], 200)
+
+    def test_the_old_password_stops_working(self):
+        self.sign_up("Grace Nabwire", "0700111222")
+        code = self.forgot("0700111222")["code"]
+        self.request(
+            "POST", "/api/auth/reset",
+            {"phone": "0700111222", "code": code, "password": "A-brand-new-one2"},
+            session="",
+        )
+        old, _ = self.request(
+            "POST", "/api/auth/login",
+            {"phone": "0700111222", "password": "A-good-password1"}, session="",
+        )
+        new, _ = self.request(
+            "POST", "/api/auth/login",
+            {"phone": "0700111222", "password": "A-brand-new-one2"}, session="",
+        )
+        self.assertEqual(old, 401)
+        self.assertEqual(new, 200)
+
+    def test_a_reset_signs_out_the_other_devices(self):
+        session = self.sign_up("Grace Nabwire", "0700111222")
+        code = self.forgot("0700111222")["code"]
+        self.request(
+            "POST", "/api/auth/reset",
+            {"phone": "0700111222", "code": code, "password": "A-brand-new-one2"},
+            session="",
+        )
+        # The whole point of resetting is often that somebody else is holding
+        # one of these.
+        self.assertEqual(self.request("GET", "/api/apps", session=session)[0], 401)
+
+    def test_an_unknown_number_looks_exactly_like_a_real_one(self):
+        self.sign_up("Grace Nabwire", "0700111222")
+        real = self.forgot("0700111222")
+        stranger = self.forgot("0755999888")
+        self.assertEqual(real.keys() - {"code", "message"}, stranger.keys())
+        self.assertTrue(stranger["sent"])
+        # No code was minted for a number with no account, so nothing can be
+        # spent against it.
+        status, _ = self.request(
+            "POST", "/api/auth/reset",
+            {"phone": "0755999888", "code": "000000", "password": "A-brand-new-one2"},
+            session="",
+        )
+        self.assertGreaterEqual(status, 400)
+
+    def test_a_signup_code_cannot_be_spent_on_a_reset(self):
+        _, body = self.request(
+            "POST", "/api/auth/signup",
+            {"name": "Grace Nabwire", "phone": "0700111222",
+             "password": "A-good-password1"},
+            session="",
+        )
+        status, reply = self.request(
+            "POST", "/api/auth/reset",
+            {"phone": "0700111222", "code": body["code"],
+             "password": "A-brand-new-one2"},
+            session="",
+        )
+        self.assertGreaterEqual(status, 400)
+        self.assertIn("something else", reply["error"])
+
+    def test_a_short_password_does_not_burn_the_code(self):
+        self.sign_up("Grace Nabwire", "0700111222")
+        code = self.forgot("0700111222")["code"]
+        status, _ = self.request(
+            "POST", "/api/auth/reset",
+            {"phone": "0700111222", "code": code, "password": "short"}, session="",
+        )
+        self.assertGreaterEqual(status, 400)
+        # Still usable, so a rejected password does not cost another text.
+        again, _ = self.request(
+            "POST", "/api/auth/reset",
+            {"phone": "0700111222", "code": code, "password": "A-brand-new-one2"},
+            session="",
+        )
+        self.assertEqual(again, 200)
+
+    def test_an_unverified_account_is_not_offered_a_reset(self):
+        # Signed up, never confirmed. There is no password to reset yet, and
+        # sending a code here would be a second way to finish the signup.
+        self.request(
+            "POST", "/api/auth/signup",
+            {"name": "Grace Nabwire", "phone": "0700111222",
+             "password": "A-good-password1"},
+            session="",
+        )
+        self.assertNotIn("code", self.forgot("0700111222"))
+
+    def test_a_weak_password_is_refused_by_the_server_not_just_the_meter(self):
+        # The browser draws these five as ticks. If the server took anything
+        # less, the meter would be decoration and the API the real way in.
+        for password, missing in (
+            ("Sh0rt-1", "8 characters"),
+            ("a-good-password1", "a capital letter"),
+            ("A-GOOD-PASSWORD1", "a lowercase letter"),
+            ("A-good-password", "a number"),
+            ("Agoodpassword1", "a symbol"),
+        ):
+            status, body = self.request(
+                "POST", "/api/auth/signup",
+                {"name": "Grace Nabwire", "phone": "0700111222",
+                 "password": password},
+                session="",
+            )
+            self.assertEqual(status, 422, password)
+            self.assertIn(missing, body["error"], password)
+
+    def test_everything_missing_is_named_at_once(self):
+        # Not one rule at a time. Three round trips to learn three things is
+        # three chances to give up.
+        status, body = self.request(
+            "POST", "/api/auth/signup",
+            {"name": "Grace Nabwire", "phone": "0700111222", "password": "abcdefgh"},
+            session="",
+        )
+        self.assertEqual(status, 422)
+        for missing in ("a capital letter", "a number", "a symbol"):
+            self.assertIn(missing, body["error"])
 
     def test_the_landing_page_needs_no_session(self):
         # A stranger has to be able to read what the product is.

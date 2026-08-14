@@ -32,6 +32,7 @@ const state = {
   user: null,          // whoever is signed in, from /api/auth/session
   demoSms: false,      // true when codes are simulated rather than texted
   pending: null,       // a phone part-way through signup
+  reset: null,         // a phone part-way through a forgotten password
   streaming: null,
 };
 
@@ -329,19 +330,116 @@ function authError(box, message) {
   clear(box).append(el('div', { class: 'banner err' }, [message]));
 }
 
+/* ── password fields ───────────────────────────────────────────────────────
+ *
+ * These are the rules, not a suggestion. The same five run in
+ * accounts.validate_password, so a full meter means the server will take it -
+ * keep the two lists in step and in the same order.
+ *
+ * The button is never disabled, though. A dead button says nothing about why
+ * it is dead, so clicking it is allowed and answers the question instead.
+ */
+const PASSWORD_RULES = [
+  ['8 characters', (value) => value.length >= 8],
+  ['Lowercase letter', (value) => /[a-z]/.test(value)],
+  ['Capital letter', (value) => /[A-Z]/.test(value)],
+  ['Number', (value) => /[0-9]/.test(value)],
+  ['Symbol', (value) => /[^A-Za-z0-9]/.test(value)],
+];
+
+const PASSWORD_INCOMPLETE = 'Your password is missing something below. Fill in every tick.';
+
+const STRENGTH = ['weak', 'medium', 'strong'];
+
+/* A password input with an eye, and optionally a strength meter under it.
+ *
+ * Returned as a bundle rather than appended anywhere, because the caller
+ * decides which `field()` it sits in and what the label says. */
+function passwordField({ placeholder = 'Your password', meter = false, autocomplete } = {}) {
+  const input = el('input', {
+    class: 'input', type: 'password', placeholder,
+    autocomplete: autocomplete || (meter ? 'new-password' : 'current-password'),
+  });
+
+  const eye = el('button', {
+    class: 'pw-eye', type: 'button', 'aria-label': 'Show password',
+    onclick: () => {
+      const hidden = input.type === 'password';
+      input.type = hidden ? 'text' : 'password';
+      eye.setAttribute('aria-label', hidden ? 'Hide password' : 'Show password');
+      clear(eye).append(icon(hidden ? 'visibility_off' : 'visibility', 'gl'));
+      input.focus();
+    },
+  }, [icon('visibility', 'gl')]);
+
+  const wrap = el('div', { class: 'pw-wrap' }, [input, eye]);
+  // A field with no meter is a field for a password that already exists, so
+  // there is nothing to hold it to. It always passes.
+  if (!meter) {
+    return { input, node: wrap, value: () => input.value, complete: () => true };
+  }
+
+  const fill = el('div', { class: 'pw-fill' });
+  const label = el('strong', { class: 'pw-label', text: 'Start typing' });
+  const rules = PASSWORD_RULES.map(([text]) => el('span', { class: 'pw-rule', text }));
+
+  const redraw = () => {
+    const value = input.value;
+    let met = 0;
+    PASSWORD_RULES.forEach(([, passes], index) => {
+      const ok = passes(value);
+      if (ok) met += 1;
+      rules[index].classList.toggle('met', ok);
+    });
+    // Nothing typed is not weak, it is nothing. Saying "Weak" at an empty box
+    // reads as a verdict on a password that does not exist yet.
+    const level = !value ? '' : STRENGTH[met <= 2 ? 0 : met < 5 ? 1 : 2];
+    fill.className = `pw-fill ${level}`;
+    label.className = `pw-label ${level}`;
+    label.textContent = value
+      ? level.charAt(0).toUpperCase() + level.slice(1)
+      : 'Start typing';
+  };
+  input.addEventListener('input', redraw);
+
+  return {
+    input,
+    value: () => input.value,
+    complete: () => PASSWORD_RULES.every(([, passes]) => passes(input.value)),
+    node: el('div', {}, [
+      wrap,
+      // Announced, but politely: a reader hears the strength settle after a
+      // pause rather than being interrupted on every keystroke.
+      el('div', { class: 'pw-strength', 'aria-live': 'polite' }, [
+        el('div', { class: 'pw-head' }, [
+          el('span', { text: 'Password strength' }),
+          label,
+        ]),
+        el('div', { class: 'pw-track' }, [fill]),
+        el('div', { class: 'pw-rules' }, rules),
+      ]),
+    ]),
+  };
+}
+
 async function showSignup() {
   const name = el('input', { class: 'input', placeholder: 'Your name', autocomplete: 'name' });
   const phone = phoneField();
-  const pass = el('input', { class: 'input', type: 'password', placeholder: 'At least 8 characters', autocomplete: 'new-password' });
+  const pass = passwordField({ placeholder: 'At least 8 characters', meter: true });
   const problem = el('div', {});
   const button = el('button', { class: 'btn primary full', text: 'Create account' });
 
   const submit = async () => {
+    if (!pass.complete()) {
+      authError(problem, PASSWORD_INCOMPLETE);
+      pass.input.focus();
+      return;
+    }
     button.disabled = true;
     clear(problem);
     try {
       const data = await api('POST', '/api/auth/signup', {
-        name: name.value, phone: phone.value(), password: pass.value,
+        name: name.value, phone: phone.value(), password: pass.value(),
       });
       state.pending = { phone: data.phone, code: data.code || '', demo: data.demo };
       go('#/verify');
@@ -351,7 +449,7 @@ async function showSignup() {
     }
   };
   button.addEventListener('click', submit);
-  for (const input of [name, phone.input, pass]) onEnter(input, submit);
+  for (const input of [name, phone.input, pass.input]) onEnter(input, submit);
 
   authScreen(
     'Create your account',
@@ -361,7 +459,7 @@ async function showSignup() {
       field('Your name', name),
       field('Phone number', phone.node,
         'We send a code to confirm it. This is also the number you will pay from.'),
-      field('Password', pass),
+      field('Password', pass.node),
       button,
     ],
     ['Already have one? ', authLink('Log in', '#/login')],
@@ -436,7 +534,9 @@ async function showVerify() {
 
 async function showLogin() {
   const phone = phoneField();
-  const pass = el('input', { class: 'input', type: 'password', placeholder: 'Your password', autocomplete: 'current-password' });
+  // No meter here. The password already exists, so rating it is a judgement
+  // nobody asked for at the moment they are trying to get in.
+  const pass = passwordField({ placeholder: 'Your password' });
   const problem = el('div', {});
   const button = el('button', { class: 'btn primary full', text: 'Log in' });
 
@@ -445,7 +545,7 @@ async function showLogin() {
     clear(problem);
     try {
       const data = await api('POST', '/api/auth/login', {
-        phone: phone.value(), password: pass.value,
+        phone: phone.value(), password: pass.value(),
       });
       state.user = data.user;
       go('#/');
@@ -455,13 +555,138 @@ async function showLogin() {
     }
   };
   button.addEventListener('click', submit);
-  for (const input of [phone.input, pass]) onEnter(input, submit);
+  for (const input of [phone.input, pass.input]) onEnter(input, submit);
 
   authScreen(
     'Welcome back',
     'Log in to your apps and builds.',
-    [problem, field('Phone number', phone.node), field('Password', pass), button],
+    [
+      problem,
+      field('Phone number', phone.node),
+      field('Password', pass.node),
+      button,
+      el('p', { class: 'authfoot' }, [authLink('Forgot your password?', '#/forgot')]),
+    ],
     ['New here? ', authLink('Create an account', '#/signup')],
+  );
+}
+
+/* A forgotten password, in two screens: prove you hold the number, then choose
+ * a new one. The code is the same six digits signup uses, so the second screen
+ * below is deliberately close to the verify screen above. */
+
+async function showForgot() {
+  const phone = phoneField(state.reset ? state.reset.phone : '');
+  const problem = el('div', {});
+  const button = el('button', { class: 'btn primary full', text: 'Send me a code' });
+
+  const submit = async () => {
+    button.disabled = true;
+    clear(problem);
+    try {
+      const data = await api('POST', '/api/auth/forgot', { phone: phone.value() });
+      // The server answers the same way for a number it has never seen, so
+      // there is nothing here to tell them apart on - and nothing should be.
+      state.reset = { phone: data.phone, code: data.code || '', demo: data.demo };
+      go('#/reset');
+    } catch (error) {
+      authError(problem, error.message);
+      button.disabled = false;
+    }
+  };
+  button.addEventListener('click', submit);
+  onEnter(phone.input, submit);
+
+  authScreen(
+    'Forgot your password?',
+    'We will text a code to the number on the account.',
+    [problem, field('Phone number', phone.node), button],
+    ['Remembered it? ', authLink('Log in', '#/login')],
+  );
+}
+
+async function showReset() {
+  if (!state.reset) { go('#/forgot'); return; }
+  const { phone } = state.reset;
+
+  const code = el('input', {
+    class: 'input mono code', placeholder: '000000', inputmode: 'numeric', maxlength: 6,
+  });
+  const pass = passwordField({ placeholder: 'At least 8 characters', meter: true });
+  // The one screen where a typo locks somebody out: there is no old password
+  // left to fall back on, and the code they used to get here is spent.
+  const repeat = passwordField({ placeholder: 'Repeat your password' });
+  const problem = el('div', {});
+  const button = el('button', { class: 'btn primary full', text: 'Set new password' });
+
+  const submit = async () => {
+    if (!pass.complete()) {
+      authError(problem, PASSWORD_INCOMPLETE);
+      pass.input.focus();
+      return;
+    }
+    if (pass.value() !== repeat.value()) {
+      authError(problem, 'The two passwords do not match.');
+      repeat.input.select();
+      return;
+    }
+    button.disabled = true;
+    clear(problem);
+    try {
+      const data = await api('POST', '/api/auth/reset', {
+        phone, code: code.value, password: pass.value(),
+      });
+      state.user = data.user;
+      state.reset = null;
+      toast('Password changed. Other devices have been signed out.');
+      go('#/');
+    } catch (error) {
+      authError(problem, error.message);
+      button.disabled = false;
+      code.select();
+    }
+  };
+  button.addEventListener('click', submit);
+  for (const input of [code, pass.input, repeat.input]) onEnter(input, submit);
+
+  const resend = el('button', {
+    class: 'btn full', text: 'Send another code',
+    onclick: async () => {
+      resend.disabled = true;
+      try {
+        const data = await api('POST', '/api/auth/forgot', { phone });
+        state.reset = { ...state.reset, code: data.code || '' };
+        toast(data.note || 'A new code is on its way');
+        go('#/reset');
+      } catch (error) {
+        authError(problem, error.message);
+      }
+      resend.disabled = false;
+    },
+  });
+
+  authScreen(
+    'Choose a new password',
+    `If that number has an account, a 6-digit code is on its way to ${phone}.`,
+    [
+      problem,
+      // Demo mode only, exactly as on the verify screen. A live server never
+      // sends the code back down the channel it is checking.
+      state.reset.demo && state.reset.code
+        ? el('div', { class: 'banner info demo-code' }, [
+            el('b', { text: 'Demo mode, nothing was texted' }),
+            'Your code is ',
+            el('code', { text: state.reset.code }),
+          ])
+        : null,
+      field('Code', code),
+      field('New password', pass.node),
+      field('Confirm password', repeat.node,
+        'Setting it signs you in here and signs out every other device.'),
+      button,
+      resend,
+    ],
+    ['Wrong number? ', authLink('Start again', '#/forgot')],
   );
 }
 
@@ -3041,17 +3266,20 @@ function go(hash) {
   else location.hash = hash;
 }
 
-const AUTH_ROUTES = ['#/login', '#/signup', '#/verify'];
+const AUTH_ROUTES = ['#/login', '#/signup', '#/verify', '#/forgot', '#/reset'];
 
 async function route() {
   const hash = location.hash || '#/';
   stopBillingPoll();
   try {
-    // Signed out: only the three auth screens exist. Signed in: those three
-    // are not screens you should be looking at, so they bounce home.
+    // Signed out: only the auth screens exist, and login is the fallback for
+    // anything else. Signed in: those screens are not ones you should be
+    // looking at, so they bounce home.
     if (!state.user) {
       if (hash === '#/signup') { await showSignup(); return; }
       if (hash === '#/verify') { await showVerify(); return; }
+      if (hash === '#/forgot') { await showForgot(); return; }
+      if (hash === '#/reset') { await showReset(); return; }
       await showLogin();
       return;
     }

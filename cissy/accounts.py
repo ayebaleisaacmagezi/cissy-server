@@ -43,6 +43,25 @@ SESSION_DAYS = 30
 CODE_MINUTES = 10
 CODE_ATTEMPTS = 5
 
+MIN_PASSWORD = 8
+
+# What a password has to have. Mirrored in the browser as the strength meter's
+# five ticks - keep PASSWORD_RULES in web/app.js in step with this list, in the
+# same order, or the meter goes green on something the server then refuses.
+PASSWORD_RULES = (
+    (f"at least {MIN_PASSWORD} characters", lambda p: len(p) >= MIN_PASSWORD),
+    ("a lowercase letter", lambda p: any(c.islower() for c in p)),
+    ("a capital letter", lambda p: any(c.isupper() for c in p)),
+    ("a number", lambda p: any(c.isdigit() for c in p)),
+    ("a symbol", lambda p: any(not c.isalnum() for c in p)),
+)
+
+# What a code may be spent on. Stored on the row and checked at the far end, so
+# a code texted for a password reset cannot be handed to the signup endpoint,
+# or the other way round.
+PURPOSE_SIGNUP = "signup"
+PURPOSE_RESET = "reset"
+
 # Every SMS costs real money, so the limits are load-bearing rather than
 # decorative. A resend button with no cooldown is a button that drains the
 # balance.
@@ -133,6 +152,32 @@ def check_password(password: str, stored: str) -> bool:
     except (ValueError, TypeError):
         return False
     return hmac.compare_digest(candidate.hex(), digest_hex)
+
+
+def validate_password(password: Any) -> str:
+    """The password rules, in the one place every caller reaches.
+
+    Called from everywhere a password arrives - signup, the unfinished-signup
+    path, and a reset - so the three cannot drift into disagreeing about what
+    is acceptable.
+
+    The same five rules the browser draws as a strength meter. They have to be
+    the same five: a meter showing five ticks over a server that only counts
+    characters is not a weaker rule, it is a lie about what the rule is.
+
+    Every failure is collected rather than the first one thrown, because being
+    told "needs a capital" and then "needs a number" on the next attempt is two
+    round trips for one answer.
+    """
+    text = str(password or "")
+    missing = [name for name, passes in PASSWORD_RULES if not passes(text)]
+    if not missing:
+        return text
+    if len(missing) == 1:
+        needs = missing[0]
+    else:
+        needs = f"{', '.join(missing[:-1])} and {missing[-1]}"
+    raise ValidationError(f"Your password needs {needs}.")
 
 
 def _token_digest(token: str) -> str:
@@ -290,8 +335,7 @@ class Accounts:
         name = " ".join(str(name).split())
         if len(name) < 2:
             raise ValidationError("Please give the name you want to be called by.")
-        if len(str(password)) < 8:
-            raise ValidationError("Choose a password of at least 8 characters.")
+        validate_password(password)
 
         user_id = self._unique_id(name)
         record = (
@@ -380,8 +424,7 @@ class Accounts:
         return self.by_phone(phone)
 
     def set_password(self, user_id: str, password: str) -> None:
-        if len(str(password)) < 8:
-            raise ValidationError("Choose a password of at least 8 characters.")
+        validate_password(password)
         with self._lock:
             self._db.execute(
                 "UPDATE users SET password_hash = ? WHERE id = ?",

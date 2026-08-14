@@ -618,6 +618,56 @@ body.signed-out .content { padding: 0; max-width: none; }
 .input.code {
   font-size: 26px; letter-spacing: 0.42em; text-align: center; padding: 12px;
 }
+
+/* A password field with an eye in it. The eye sits inside the border, so the
+   input needs room on the right for it - hence the paired class on the input
+   rather than padding on the wrapper. */
+.pw-wrap { position: relative; }
+.pw-wrap .input { padding-right: 42px; }
+.pw-eye {
+  position: absolute; top: 50%; right: 6px; transform: translateY(-50%);
+  border: 0; background: transparent; cursor: pointer; padding: 6px;
+  color: var(--ink-3); line-height: 0; border-radius: var(--r);
+}
+.pw-eye .material-symbols-outlined { font-size: 19px; }
+.pw-eye:hover { color: var(--ink-2); }
+.pw-eye:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* The strength meter. Guidance, not a gate: the server asks only for length,
+   so nothing here disables the button. Somebody who wants a weak password
+   still gets one, they just cannot say they were not told. */
+.pw-strength { margin: 10px 0 2px; }
+.pw-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 6px; font-size: 11.5px; color: var(--ink-3);
+}
+.pw-label { font-weight: 600; color: var(--ink-3); }
+.pw-track {
+  height: 6px; border-radius: 99px; background: var(--hair-2); overflow: hidden;
+}
+.pw-fill {
+  width: 0; height: 100%; border-radius: inherit; background: var(--ink-3);
+  transition: width 220ms var(--ease), background-color 220ms var(--ease);
+}
+.pw-fill.weak { width: 33%; background: var(--err); }
+.pw-fill.medium { width: 66%; background: var(--warn); }
+.pw-fill.strong { width: 100%; background: var(--ok); }
+.pw-label.weak { color: var(--err-ink); }
+.pw-label.medium { color: var(--warn-ink); }
+.pw-label.strong { color: var(--ok-ink); }
+
+.pw-rules {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; margin-top: 10px;
+}
+.pw-rule {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 11px; color: var(--ink-3);
+}
+/* The tick is CSS rather than an icon, so nothing in JavaScript has to reach
+   in and rewrite the text of a label somebody may be reading. */
+.pw-rule::before { content: '○'; font-weight: 800; }
+.pw-rule.met { color: var(--ok-ink); }
+.pw-rule.met::before { content: '✓'; }
 .banner.demo-code code {
   font-size: 17px; font-weight: 700; letter-spacing: 0.14em;
   background: var(--surface); padding: 2px 8px; border-radius: 6px;

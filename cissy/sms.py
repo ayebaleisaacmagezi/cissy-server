@@ -92,3 +92,18 @@ def build_sender(settings: Settings | None = None) -> Any:
 
 def verification_message(code: str, minutes: int, app_name: str = "CissyWeb2App") -> str:
     return f"Your {app_name} verification code is {code}. It expires in {minutes} minutes."
+
+
+def reset_message(code: str, minutes: int, app_name: str = "CissyWeb2App") -> str:
+    """Worded apart from the signup code on purpose.
+
+    A reset code can arrive at somebody who never asked for one, which is the
+    first sign of an attempt on their account. The text has to say what it is
+    for and that ignoring it is safe, otherwise a bare six digits reads as an
+    instruction to type them in somewhere.
+    """
+    return (
+        f"Your {app_name} password reset code is {code}. It expires in "
+        f"{minutes} minutes. If you did not ask to reset your password, "
+        f"ignore this message - your account is unchanged."
+    )

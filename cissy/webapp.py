@@ -30,7 +30,7 @@ from .config import AppConfig, slugify
 from .errors import CissyError, ConflictError, NotFoundError, ValidationError
 from .payments import PLANS, PaymentService, PaymentStore, Subscription
 from .signing import SigningCredentials
-from .sms import DemoSms, build_sender, verification_message
+from .sms import DemoSms, build_sender, reset_message, verification_message
 from .store import ProjectStore, Workspaces
 from . import accounts as accounts_mod
 from . import firebase, generate, pushdocs, toolchain
@@ -50,6 +50,10 @@ PUBLIC_ROUTES = frozenset({
     "/api/auth/resend",
     "/api/auth/login",
     "/api/auth/session",
+    # Somebody who has forgotten their password is by definition signed out,
+    # so both halves of the reset have to be reachable without a session.
+    "/api/auth/forgot",
+    "/api/auth/reset",
 })
 
 SESSION_COOKIE = "cissy_session"
@@ -231,6 +235,8 @@ class Application:
         add("POST", "/api/auth/verify", self.verify)
         add("POST", "/api/auth/resend", self.resend)
         add("POST", "/api/auth/login", self.login)
+        add("POST", "/api/auth/forgot", self.forgot)
+        add("POST", "/api/auth/reset", self.reset_password)
         add("GET", "/api/auth/session", self.session)
         add("POST", "/api/auth/logout", self.logout)
 
@@ -307,7 +313,7 @@ class Application:
             )
 
         try:
-            sent = self._send_code(phone, request.ip, purpose="signup")
+            sent = self._send_code(phone, request.ip, purpose=accounts_mod.PURPOSE_SIGNUP)
         except accounts_mod.RateLimited as error:
             # Pressing the button twice is the commonest reason to land here,
             # and "429 wait 59 seconds" reads like a failure when in fact the
@@ -330,12 +336,16 @@ class Application:
             # Deliberately the same shape as success. Otherwise this endpoint
             # answers "does this number have an account?" for anyone who asks.
             return {"phone": phone, "sent": True, "demo": self.demo_sms}
-        return {"phone": phone, **self._send_code(phone, request.ip, purpose="signup")}
+        return {"phone": phone, **self._send_code(phone, request.ip, purpose=accounts_mod.PURPOSE_SIGNUP)}
 
     def _send_code(self, phone: str, ip: str, *, purpose: str) -> dict[str, Any]:
         code = self.accounts.issue_code(phone, purpose=purpose, ip=ip)
-        message = verification_message(code, accounts_mod.CODE_MINUTES)
-        sent = self.sms.send(phone=phone, message=message, reference=f"verify-{phone}")
+        minutes = accounts_mod.CODE_MINUTES
+        if purpose == accounts_mod.PURPOSE_RESET:
+            message, reference = reset_message(code, minutes), f"reset-{phone}"
+        else:
+            message, reference = verification_message(code, minutes), f"verify-{phone}"
+        sent = self.sms.send(phone=phone, message=message, reference=reference)
         payload: dict[str, Any] = {"sent": sent.ok, "demo": self.demo_sms}
         if self.demo_sms:
             # Only ever in demo mode, and the flag is what the browser keys off
@@ -353,7 +363,7 @@ class Application:
         user = self.accounts.by_phone(phone)
         if user is None:
             raise ValidationError("Sign up first.")
-        if not self.accounts.check_code(phone, str(data.get("code") or ""), purpose="signup"):
+        if not self.accounts.check_code(phone, str(data.get("code") or ""), purpose=accounts_mod.PURPOSE_SIGNUP):
             raise ValidationError("That code is not right. Check it and try again.")
 
         self.accounts.mark_verified(user.id)
@@ -370,10 +380,69 @@ class Application:
             # this endpoint cannot be used to enumerate who has an account.
             raise AuthError("That number and password do not match.")
         if not user.verified:
-            self._send_code(phone, request.ip, purpose="signup")
+            self._send_code(phone, request.ip, purpose=accounts_mod.PURPOSE_SIGNUP)
             raise ForbiddenError(
                 "That number was never confirmed. We have sent a new code."
             )
+        token, _ = self.accounts.open_session(user.id)
+        return Cookie({"user": user.to_json()}, token=token)
+
+    def forgot(self, request: Request) -> dict[str, Any]:
+        """Text a code that can set a new password.
+
+        Every path out of here has the same shape, including the ones that send
+        nothing. Anything else and this endpoint answers "does this number have
+        an account?" for whoever asks, which is the question a stranger with a
+        list of numbers most wants answered.
+        """
+        data = request.json()
+        phone = accounts_mod_phone(data.get("phone"))
+        user = self.accounts.by_phone(phone)
+        quiet = {"phone": phone, "sent": True, "demo": self.demo_sms}
+
+        # An unverified account has no password worth resetting - nobody has
+        # ever logged into it. Signup's own code is the way in, and sending a
+        # reset code here would be a second way to finish somebody else's
+        # abandoned signup.
+        if user is None or not user.verified:
+            return quiet
+
+        try:
+            sent = self._send_code(phone, request.ip, purpose=accounts_mod.PURPOSE_RESET)
+        except accounts_mod.RateLimited as error:
+            # Pressing the button twice is the commonest way to land here, and
+            # the code from a minute ago is still valid, so this is not a
+            # failure to report. Folded into the same shape as the branch above
+            # so a rate limit does not become the leak the rest of this avoids.
+            return {
+                **quiet,
+                "note": error.message,
+                "resend_in": self.accounts.seconds_until_resend(phone),
+            }
+        return {"phone": phone, **sent}
+
+    def reset_password(self, request: Request) -> Cookie:
+        """Spend the code, set the password, sign them in on this device only."""
+        data = request.json()
+        phone = accounts_mod_phone(data.get("phone"))
+        # Checked before the code is spent. check_code consumes a correct code,
+        # so validating afterwards would burn it on a password that was never
+        # going to be accepted and cost another SMS to get back.
+        password = accounts_mod.validate_password(data.get("password"))
+
+        user = self.accounts.by_phone(phone)
+        if user is None:
+            raise ValidationError("Ask for a code first.")
+        if not self.accounts.check_code(
+            phone, str(data.get("code") or ""), purpose=accounts_mod.PURPOSE_RESET
+        ):
+            raise ValidationError("That code is not right. Check it and try again.")
+
+        self.accounts.set_password(user.id, password)
+        # Before the new session, not after. The reason somebody resets a
+        # password is often that somebody else has it, and leaving that
+        # session open makes the reset theatre.
+        self.accounts.close_all_sessions(user.id)
         token, _ = self.accounts.open_session(user.id)
         return Cookie({"user": user.to_json()}, token=token)
 
