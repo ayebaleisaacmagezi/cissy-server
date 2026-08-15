@@ -32,6 +32,7 @@ from .platform import (
     launch_background,
     main_activity,
     pubspec,
+    splash_colour_resource,
     splash_icon_drawable,
     styles_v31,
 )
@@ -51,6 +52,7 @@ __all__ = [
     "organisation",
     "project_name",
     "pubspec",
+    "splash_colour_resource",
     "splash_icon_drawable",
     "styles_v31",
 ]

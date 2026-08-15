@@ -56,9 +56,8 @@ def pubspec(
     if config.push_enabled:
         for name, version in push.PUSH_DEPENDENCIES.items():
             lines.append(f"  {name}: {version}")
-    # Push stores the chosen categories and the local notification history, so
-    # it needs this whether or not Saved items is on.
-    if "Saved items" in features or config.push_enabled:
+    # Push stores which categories the user chose.
+    if config.push_enabled:
         lines.append(f"  shared_preferences: {DEPENDENCIES['shared_preferences']}")
 
     lines += [
@@ -76,7 +75,15 @@ def pubspec(
         "flutter:",
         "  uses-material-design: true",
     ]
-    bundled = [asset for asset in (splash_asset, offline_asset) if asset]
+    # The icon is copied in for flutter_launcher_icons, which reads it at build
+    # time from disk. The icon splash draws it at run time, so on that setting
+    # it has to be a declared asset as well or Image.asset finds nothing.
+    icon_splash = config.splash_style != "image" and icon_asset
+    bundled = [
+        asset
+        for asset in (splash_asset, offline_asset, icon_asset if icon_splash else None)
+        if asset
+    ]
     if bundled:
         lines += ["  assets:"] + [f"    - {asset}" for asset in bundled]
 
@@ -224,7 +231,7 @@ class MainActivity : FlutterActivity()
 SPLASH_DRAWABLE = "cissy_splash"
 
 
-def launch_background(has_splash: bool) -> str:
+def launch_background(has_splash: bool, colour: str = "") -> str:
     """The window Android draws between tapping the icon and Flutter's first
     frame.
 
@@ -232,8 +239,19 @@ def launch_background(has_splash: bool) -> str:
     with no white flash in between. `fill` gravity because an XML bitmap
     cannot centre-crop; the in-app splash widget (BoxFit.cover) takes over on
     the first Flutter frame, so any stretch lasts a fraction of a second.
+
+    With the icon splash there is no image to draw here - the icon is a Flutter
+    widget and Flutter has not started yet - so the window is the splash's own
+    background colour. That makes the seam invisible: the plain colour Android
+    paints is the same colour the first Flutter frame paints under the icon.
     """
     if not has_splash:
+        if colour:
+            return f"""<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/cissy_splash_background" />
+</layer-list>
+"""
         # The Flutter scaffold's own default.
         return """<?xml version="1.0" encoding="utf-8"?>
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
@@ -248,6 +266,19 @@ def launch_background(has_splash: bool) -> str:
             android:src="@drawable/{SPLASH_DRAWABLE}" />
     </item>
 </layer-list>
+"""
+
+
+def splash_colour_resource(colour: str) -> str:
+    """The splash background, as an Android colour resource.
+
+    A separate file rather than a literal in the layer-list, because the same
+    name is overridden in values-night and a literal cannot be.
+    """
+    return f"""<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="cissy_splash_background">{colour}</color>
+</resources>
 """
 
 
@@ -268,7 +299,7 @@ def splash_icon_drawable() -> str:
 """
 
 
-def styles_v31(*, night: bool) -> str:
+def styles_v31(*, night: bool, colour: str = "") -> str:
     """LaunchTheme for Android 12+, where the system splash exists.
 
     Only LaunchTheme is overridden; NormalTheme still comes from the
@@ -276,7 +307,10 @@ def styles_v31(*, night: bool) -> str:
     the moment the system phase ends the splash is already on screen.
     """
     parent = "Theme.Black.NoTitleBar" if night else "Theme.Light.NoTitleBar"
-    background = "@android:color/black" if night else "@android:color/white"
+    # The system splash's own background. With the icon splash it is the chosen
+    # colour, so the Android 12 phase, the launch window and the first Flutter
+    # frame are all the same colour and the app appears to open in one piece.
+    background = colour or ("@android:color/black" if night else "@android:color/white")
     return f"""<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <style name="LaunchTheme" parent="@android:style/{parent}">

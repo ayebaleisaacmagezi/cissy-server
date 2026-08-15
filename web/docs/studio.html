@@ -43,14 +43,11 @@
     <thead><tr><th>Module</th><th>What it does</th></tr></thead>
     <tbody>
       <tr><td>File upload</td><td>Lets your site open the phone's file picker. Without it, file inputs on your pages are disabled.</td></tr>
-      <tr><td>Downloads</td><td>Files your site serves are saved to the phone and can be opened. Adds a Downloads screen.</td></tr>
       <tr><td>Native sharing</td><td>The phone's own share sheet, so a page can be sent to WhatsApp or anywhere else.</td></tr>
       <tr><td>Pull to refresh</td><td>Swipe down at the top of a page to reload it.</td></tr>
       <tr><td>Camera</td><td>Lets the site use the camera for uploads. Adds a camera permission prompt.</td></tr>
       <tr><td>Location</td><td>Lets the site ask where the phone is. Adds a location permission prompt.</td></tr>
       <tr><td>Deep links</td><td>Links to your domain open your app instead of the browser. See below.</td></tr>
-      <tr><td>Saved items</td><td>Bookmarks and recently viewed pages, kept on the phone so they work offline.</td></tr>
-      <tr><td>Settings screen</td><td>A native page with clear cache, an about section, and a link to open the site in a browser.</td></tr>
     </tbody>
   </table>
 
@@ -66,8 +63,8 @@
 
   <h2>Native navigation</h2>
   <p>
-    A bottom bar drawn by the app, with between two and five tabs. Each tab can
-    open a page of your website or one of the native screens.
+    A bottom bar drawn by the app, with between two and five tabs. Each tab
+    opens a page of your website.
   </p>
   <p>
     Each tab keeps its own page loaded. Switching between them is instant and
@@ -76,14 +73,9 @@
   </p>
 
   <h3>What a tab can open</h3>
-  <ul>
-    <li><b>Your website's home page</b></li>
-    <li><b>A page of your site</b> - a path like <code>/shop</code>, or a full address</li>
-    <li><b>Saved</b>, <b>Downloads</b>, <b>Settings</b> or <b>Notifications</b> - native screens, each needing its module switched on</li>
-  </ul>
   <p>
-    At least one tab has to open the website. A bar made entirely of native
-    screens would be an app with no content in it, so that is refused.
+    A page of your website. A path like <code>/shop</code>, or a full address.
+    That is the whole list - a tab is a label, an icon and a link.
   </p>
 
   <h3>Keeping the right tab lit</h3>

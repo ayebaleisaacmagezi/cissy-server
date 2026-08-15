@@ -74,8 +74,28 @@ class NormaliseTest(unittest.TestCase):
         self.assertEqual(cleaned.allowed_domains, ("portal.cissytech.com",))
 
     def test_drops_unknown_features_and_keeps_a_stable_order(self):
-        cleaned = normalise(make(features=("Camera", "Downloads", "Nonsense")))
-        self.assertEqual(cleaned.features, ("Downloads", "Camera"))
+        cleaned = normalise(make(features=("Camera", "Deep links", "Nonsense")))
+        self.assertEqual(cleaned.features, ("Camera", "Deep links"))
+
+    def test_the_splash_defaults_to_the_icon_on_a_background(self):
+        # No upload needed: the icon is already there, and unlike one flat
+        # image a colour can follow the phone into dark mode.
+        self.assertEqual(make().splash_style, "icon")
+
+    def test_a_bad_splash_style_is_refused(self):
+        with self.assertRaises(ValidationError):
+            validate(normalise(make(splash_style="rainbow")))
+
+    def test_a_bad_splash_colour_is_refused(self):
+        with self.assertRaises(ValidationError) as caught:
+            validate(normalise(make(splash_bg_dark="black")))
+        self.assertIn("dark", str(caught.exception))
+
+    def test_the_splash_colours_round_trip(self):
+        original = make(splash_style="image", splash_bg_light="#FAFAFA")
+        restored = AppConfig.from_json(original.to_json())
+        self.assertEqual(restored.splash_style, "image")
+        self.assertEqual(restored.splash_bg_light, "#FAFAFA")
 
     def test_turns_a_blank_user_agent_into_none(self):
         self.assertIsNone(normalise(make(custom_user_agent="   ")).custom_user_agent)

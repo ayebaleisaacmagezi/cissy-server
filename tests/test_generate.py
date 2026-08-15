@@ -196,18 +196,38 @@ class LaunchScreenTest(unittest.TestCase):
         icon = (self.res / "drawable" / "cissy_splash_icon.xml").read_text()
         self.assertIn("transparent", icon)
 
-    def test_no_splash_means_the_stock_launch_screen(self):
-        self.apply()
+    def test_the_image_style_with_no_file_is_the_stock_launch_screen(self):
+        # Nothing to draw and nothing chosen to draw it on.
+        config = dataclasses.replace(
+            self.config, splash_file=None, splash_style="image"
+        )
+        self.apply(config)
         contents = (self.res / "drawable" / "launch_background.xml").read_text()
         self.assertNotIn(template.SPLASH_DRAWABLE, contents)
         self.assertFalse((self.res / "values-v31" / "styles.xml").exists())
+
+    def test_the_icon_style_paints_the_window_its_own_colour(self):
+        # No image exists at launch-window time - the icon is a Flutter widget
+        # and Flutter has not started - so the window is the colour the first
+        # Flutter frame will paint under the icon.
+        self.apply(dataclasses.replace(self.config, splash_bg_light="#101014"))
+        contents = (self.res / "drawable" / "launch_background.xml").read_text()
+        self.assertIn("cissy_splash_background", contents)
+        self.assertIn(
+            "#101014", (self.res / "values" / "cissy_splash.xml").read_text()
+        )
+        self.assertIn(
+            "#101014", (self.res / "values-v31" / "styles.xml").read_text()
+        )
 
     def test_removing_the_splash_reverts_everything(self):
         # The scaffold survives between builds, so a removed splash has to
         # take its overrides with it rather than leaving a stale launch screen.
         self.upload_splash()
         self.apply()
-        without = dataclasses.replace(self.config, splash_file=None)
+        without = dataclasses.replace(
+            self.config, splash_file=None, splash_style="image"
+        )
         self.apply(without)
         contents = (self.res / "drawable" / "launch_background.xml").read_text()
         self.assertNotIn(template.SPLASH_DRAWABLE, contents)

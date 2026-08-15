@@ -360,12 +360,63 @@ class CustomOfflineScreenTest(unittest.TestCase):
         self.assertIn("    - assets/splash.png", pubspec)
         self.assertIn("    - assets/offline.html", pubspec)
 
+class SplashTest(unittest.TestCase):
+    """The icon on a background, which is what an app gets without uploading."""
+
+    def dart(self, **extra):
+        return template.main_dart(
+            make(**extra), extra.pop("_splash", None), None, "assets/icon/icon.png"
+        )
+
+    def test_the_icon_is_centred_on_the_background(self):
+        source = self.dart()
+        self.assertIn("ColoredBox(", source)
+        self.assertIn('"assets/icon/icon.png"', source)
+
+    def test_the_background_follows_the_phone_into_dark_mode(self):
+        source = self.dart()
+        self.assertIn("MediaQuery.platformBrightnessOf(context)", source)
+        self.assertIn("0xFFFFFFFF", source)
+        self.assertIn("0xFF101014", source)
+
+    def test_one_colour_for_both_modes_asks_no_question(self):
+        # Same colour either way, so the brightness check would be dead code.
+        source = self.dart(splash_bg_light="#222222", splash_bg_dark="#222222")
+        self.assertIn("0xFF222222", source)
+        self.assertNotIn("platformBrightnessOf", source)
+
+    def test_the_image_style_fills_the_screen(self):
+        source = template.main_dart(
+            make(splash_style="image"), "assets/splash.png", None, "assets/icon/i.png"
+        )
+        self.assertIn('"assets/splash.png"', source)
+        self.assertIn("BoxFit.cover", source)
+        # The icon is the other style's business.
+        self.assertNotIn('"assets/icon/i.png"', source)
+        self.assertNotIn("platformBrightnessOf", source)
+
+    def test_no_icon_still_paints_the_background(self):
+        # Better a plain surface than an empty box: it reads as the app
+        # starting rather than as a failure.
+        source = template.main_dart(make(), None, None, None)
+        self.assertIn("child: const SizedBox.expand(),", source)
+        self.assertNotIn("Image.asset", source)
+
+    def test_the_icon_is_bundled_only_when_it_is_drawn(self):
+        with_icon = template.pubspec(make(), None, "assets/icon/i.png", None)
+        self.assertIn("    - assets/icon/i.png", with_icon)
+        as_image = template.pubspec(
+            make(splash_style="image"), None, "assets/icon/i.png", None
+        )
+        self.assertNotIn("    - assets/icon/i.png", as_image)
+
+
 class TopBarTest(unittest.TestCase):
     """The shell's top app bar earns its place or does not exist.
 
     With nothing to hold it would just be a strip of chrome between the user
-    and their website, so it only appears when Saved items or Native sharing
-    puts a button in it.
+    and their website, so it only appears when Native sharing puts a button
+    in it.
     """
 
     NAV = dict(
@@ -498,17 +549,6 @@ class TabEchoTest(unittest.TestCase):
         source = self.dart(self.MATCHED)
         self.assertIn('["/account", "/profile", "/orders"]', source)
 
-    def test_native_tabs_match_nothing(self):
-        source = template.main_dart(make(
-            features=("Saved items",),
-            nav_style="bottom",
-            nav_tabs=(
-                {"label": "Home", "icon": "home", "target": "/"},
-                {"label": "Saved", "icon": "bookmark", "target": "native:saved"},
-            ),
-        ))
-        self.assertIn('navMatches = <List<String>>[["/"], []]', source)
-
     def test_the_bar_prefers_the_echo(self):
         self.assertIn("selectedIndex: echoIndex ?? index", self.dart(self.PLAIN))
 
@@ -604,11 +644,10 @@ class PushTest(unittest.TestCase):
         self.assertIn("scaffoldMessengerKey: pushMessengerKey", source)
         self.assertIn("showMaterialBanner", source)
 
-    def test_silent_shows_nothing_but_still_records(self):
+    def test_silent_shows_nothing_at_all(self):
         source = self.dart(push_foreground="silent")
         self.assertNotIn("_local.show(", source)
         self.assertNotIn("showMaterialBanner", source)
-        self.assertIn("PushInbox.record", source)
 
     def test_no_endpoint_means_the_app_never_phones_anywhere(self):
         self.assertIn('const pushTokenEndpoint = "";', self.dart())
@@ -624,18 +663,6 @@ class PushTest(unittest.TestCase):
         source = self.dart()
         self.assertIn("await _maybeAskAboutPush();", source)
         self.assertIn("bool pushPromptShown = false;", source)
-
-    def test_the_inbox_tab_becomes_a_screen(self):
-        source = self.dart(
-            nav_style="bottom",
-            nav_tabs=(
-                {"label": "Home", "icon": "home", "target": "/"},
-                {"label": "Updates", "icon": "article",
-                 "target": "native:notifications"},
-            ),
-        )
-        self.assertIn("PushInboxScreen(key: inboxKey", source)
-        self.assertIn("inboxKey.currentState?.refresh()", source)
 
     def test_push_adds_the_packages_it_needs(self):
         pubspec = template.pubspec(make(push_enabled=True))

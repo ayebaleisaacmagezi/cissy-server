@@ -25,48 +25,80 @@ SCHEMA_VERSION = 1
 # native modules this server grew later; the desktop builder ignores them.
 FEATURES = (
     "File upload",
-    "Downloads",
     "Native sharing",
     "Pull to refresh",
     "Camera",
     "Location",
     "Deep links",
-    "Saved items",
-    "Settings screen",
 )
 
 EXTERNAL_LINK_BEHAVIOURS = ("browser", "webview", "block")
 
 NAV_STYLES = ("none", "bottom")
 
-# What a navigation tab may open besides a page of the website. Each native
-# target only exists when its module is enabled, which validate() enforces.
-NAV_NATIVE_TARGETS = {
-    "native:saved": "Saved items",
-    "native:downloads": "Downloads",
-    "native:settings": "Settings screen",
-}
+SPLASH_STYLES = ("icon", "image")
 
-# Notifications is a native target too, but it is not backed by a feature flag -
-# it exists when push is switched on. Kept out of the map above so the
-# feature-name lookup there stays honest.
-NAV_NOTIFICATIONS = "native:notifications"
+# What the splash sits on when nobody has chosen. White by day and near-black
+# by night, which is what a phone's own surfaces do - a splash that ignores
+# dark mode is a white flash at three in the morning.
+DEFAULT_SPLASH_LIGHT = "#ffffff"
+DEFAULT_SPLASH_DARK = "#101014"
 
-# The Material icon names a tab may use. A fixed set because the generated
-# Dart maps each name to an IconData at compile time.
+# A tab opens a page of the website. Nothing else.
+#
+# It used to be able to open one of four screens the app drew itself - saved
+# pages, downloads, a settings list, a notification inbox. They were four
+# screens nobody had asked for, each with its own module switch, its own
+# validation rule tying the tab to the switch, and its own empty state to
+# write. A tab is now a label, an icon and a link, which is what people came
+# here to make.
+
+# The Material icon names a tab may use.
+#
+# Still a fixed set, because each one becomes `Icons.<name>_rounded` in the
+# generated Dart at compile time and a name Flutter does not know fails the
+# build rather than the save. Every name below was checked against
+# packages/flutter/lib/src/material/icons.dart in the SDK this server builds
+# with - none of them are guesses. Adding one means checking it there first.
+#
+# Grouped by what an app is, because the browser draws them in this order and a
+# list of a hundred and twenty icons in no order is a list nobody reads.
 NAV_ICONS = (
-    "home",
-    "storefront",
-    "menu_book",
-    "article",
-    "shopping_bag",
-    "event",
-    "call",
-    "person",
-    "bookmark",
-    "download",
-    "settings",
-    "info",
+    # getting around
+    "home", "search", "menu", "grid_view", "dashboard", "category", "explore",
+    "account_circle", "person", "group", "groups", "settings", "info", "help",
+    "notifications", "bookmark", "favorite", "star", "share", "link",
+    "language", "public",
+    # selling
+    "storefront", "shopping_bag", "shopping_cart", "shopping_basket",
+    "local_offer", "sell", "redeem", "card_giftcard", "loyalty", "add_business",
+    "inventory_2", "local_shipping", "qr_code", "qr_code_scanner",
+    # money
+    "payments", "credit_card", "account_balance_wallet", "receipt_long",
+    "savings", "calculate",
+    # things to read and watch
+    "article", "menu_book", "description", "newspaper", "feed", "campaign",
+    "podcasts", "movie", "live_tv", "video_library", "image", "photo_camera",
+    "music_note", "headphones", "folder", "cloud", "download",
+    # getting in touch
+    "call", "mail", "chat", "forum", "support_agent", "place", "map",
+    "directions",
+    # when
+    "event", "calendar_month", "schedule", "history",
+    # going out
+    "restaurant", "local_cafe", "local_bar", "fastfood", "hotel", "flight",
+    "directions_car", "two_wheeler", "local_gas_station", "park",
+    "local_activity", "confirmation_number", "celebration", "cake",
+    # trades and services
+    "school", "work", "business_center", "apartment", "medical_services",
+    "health_and_safety", "fitness_center", "sports_soccer", "spa",
+    "self_improvement", "checkroom", "diamond", "watch", "chair", "bed",
+    "kitchen", "cleaning_services", "home_repair_service", "engineering",
+    "construction", "build", "agriculture", "pets", "science", "church",
+    "handshake", "volunteer_activism", "gavel", "water_drop", "bolt",
+    # numbers and locks
+    "trending_up", "insights", "leaderboard", "verified", "lock", "key",
+    "quiz", "wifi", "phone_android", "computer", "print",
 )
 
 _HEX_COLOR_RE = re.compile(r"^#[0-9a-f]{6}$")
@@ -195,6 +227,14 @@ class AppConfig:
     # path - the server owns where things live.
     icon_file: str | None = None
     splash_file: str | None = None
+    # What the splash actually is. "icon" centres the launcher icon on a
+    # background; "image" fills the screen with splash_file. The icon is the
+    # default because it costs nothing extra - the icon is already there, it
+    # cannot be cropped wrong, and it can follow the phone into dark mode,
+    # which one flat image cannot.
+    splash_style: str = "icon"
+    splash_bg_light: str = ""
+    splash_bg_dark: str = ""
     keystore_file: str | None = None
     key_alias: str | None = None
     # Why the app wants each permission, shown by iOS in the system prompt.
@@ -286,6 +326,9 @@ class AppConfig:
             "version_code": self.version_code,
             "icon_file": self.icon_file,
             "splash_file": self.splash_file,
+            "splash_style": self.splash_style,
+            "splash_bg_light": self.splash_bg_light,
+            "splash_bg_dark": self.splash_bg_dark,
             # Note the absence of any password field. See the module docstring.
             "keystore_file": self.keystore_file,
             "key_alias": self.key_alias,
@@ -337,6 +380,9 @@ class AppConfig:
             version_code=_positive_int(data, "version_code", 1),
             icon_file=_optional_text(data, "icon_file"),
             splash_file=_optional_text(data, "splash_file"),
+            splash_style=_text(data, "splash_style") or "icon",
+            splash_bg_light=_text(data, "splash_bg_light"),
+            splash_bg_dark=_text(data, "splash_bg_dark"),
             keystore_file=_optional_text(data, "keystore_file"),
             key_alias=_optional_text(data, "key_alias"),
             permission_descriptions=_str_map(data, "permission_descriptions"),
@@ -421,6 +467,9 @@ def normalise(config: AppConfig) -> AppConfig:
         features=tuple(features),
         offline_custom_html=config.offline_custom_html.strip(),
         theme_color=config.theme_color.strip().lower(),
+        splash_style=config.splash_style.strip().lower() or "icon",
+        splash_bg_light=config.splash_bg_light.strip().lower(),
+        splash_bg_dark=config.splash_bg_dark.strip().lower(),
         nav_style=style,
         nav_tabs=tuple(tabs),
         hide_selectors=tuple(selectors),
@@ -480,6 +529,8 @@ def validate(config: AppConfig) -> None:
             detail=config.theme_color,
         )
 
+    _validate_splash(config)
+
     # The screen ships inside every APK, so a pasted photo-heavy page would
     # quietly bloat the app. Inline SVG artwork fits comfortably under this.
     if len(config.offline_custom_html) > 200_000:
@@ -509,6 +560,33 @@ def validate(config: AppConfig) -> None:
 
     if config.version_code < 1:
         raise ValidationError("The version code must be 1 or higher.")
+
+
+def _validate_splash(config: AppConfig) -> None:
+    """Check the splash. The icon itself is not required here.
+
+    Somebody picks the icon splash and then goes to find a logo, so demanding
+    the file at this point would refuse the save that records the decision. The
+    build is where a missing icon becomes an error, because that is the first
+    moment it would produce a blank screen.
+    """
+    if config.splash_style not in SPLASH_STYLES:
+        raise ValidationError(
+            "The splash must be either your app icon on a background, or an "
+            "image you upload.",
+            detail=config.splash_style,
+        )
+
+    for value, which in (
+        (config.splash_bg_light, "light"),
+        (config.splash_bg_dark, "dark"),
+    ):
+        if value and not _HEX_COLOR_RE.match(value):
+            raise ValidationError(
+                f"The {which}-mode splash background must be a six-digit hex "
+                f"value like #ffffff.",
+                detail=value,
+            )
 
 
 def _validate_push(config: AppConfig) -> None:
@@ -616,8 +694,6 @@ def _validate_nav_tabs(config: AppConfig) -> None:
     if not 2 <= len(config.nav_tabs) <= 5:
         raise ValidationError("Bottom navigation needs between 2 and 5 tabs.")
 
-    features = set(config.features)
-    web_tabs = 0
     for tab in config.nav_tabs:
         label = tab.get("label", "")
         target = tab.get("target", "")
@@ -634,11 +710,6 @@ def _validate_nav_tabs(config: AppConfig) -> None:
             raise ValidationError(f'Unknown tab icon "{icon}".')
 
         matches = tab.get("match") or ()
-        if matches and (target in NAV_NATIVE_TARGETS or target == NAV_NOTIFICATIONS):
-            raise ValidationError(
-                f'The "{label}" tab opens a native screen, so it cannot also '
-                f"light up for pages of the website."
-            )
         if len(matches) > MAX_TAB_MATCHES:
             raise ValidationError(
                 f'The "{label}" tab lists {len(matches)} pages to light up '
@@ -652,36 +723,14 @@ def _validate_nav_tabs(config: AppConfig) -> None:
                     detail=label,
                 )
 
-        if target == NAV_NOTIFICATIONS:
-            if not config.push_enabled:
-                raise ValidationError(
-                    f'The "{label}" tab opens the notifications screen, but '
-                    f"push notifications are switched off. Turn them on or "
-                    f"remove the tab."
-                )
-        elif target in NAV_NATIVE_TARGETS:
-            needed = NAV_NATIVE_TARGETS[target]
-            if needed not in features:
-                raise ValidationError(
-                    f'The "{label}" tab opens the {needed} screen, but that '
-                    f"module is switched off. Enable it or remove the tab."
-                )
-        elif target.startswith("/"):
-            web_tabs += 1
-        elif target.startswith(("http://", "https://")):
+        if target.startswith(("http://", "https://")):
             _validate_url(target, config.require_https)
-            web_tabs += 1
-        else:
+        elif not target.startswith("/"):
             raise ValidationError(
-                f'The "{label}" tab must open a full URL, a path starting '
-                f"with /, or a native screen.",
+                f'The "{label}" tab must open a full URL or a path starting '
+                f"with /.",
                 detail=target,
             )
-    if web_tabs == 0:
-        raise ValidationError(
-            "At least one navigation tab must open the website - otherwise "
-            "the app has no web content at all."
-        )
 
 
 def _validate_url(value: str, require_https: bool) -> None:

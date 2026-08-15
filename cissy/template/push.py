@@ -48,13 +48,6 @@ CHANNEL_ID = "cissy_default"
 CHANNEL_NAME = "Notifications"
 
 
-def has_inbox(config: AppConfig) -> bool:
-    """Whether the app keeps a local list of what it has received."""
-    return any(
-        tab.get("target") == "native:notifications" for tab in config.nav_tabs
-    )
-
-
 def imports(config: AppConfig) -> list[str]:
     return [
         "import 'package:firebase_core/firebase_core.dart';",
@@ -120,7 +113,6 @@ BACKGROUND_HANDLER = """\
 @pragma('vm:entry-point')
 Future<void> pushBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
-  await PushInbox.record(message);
 }
 """
 
@@ -168,69 +160,6 @@ class PushRouter {
     if (target != null) {
       pendingPushUrl.value = target;
     }
-  }
-}
-"""
-
-
-def inbox(config: AppConfig) -> str:
-    """The local record of what has arrived.
-
-    Written from two isolates - the background handler and the app - so it is
-    read back from disk every time rather than cached in memory.
-    """
-    return """\
-/// What this device has received, kept on the device.
-///
-/// A convenience history, not a message store: it holds what this install
-/// happened to be sent, it is capped, and clearing the app's data clears it.
-/// Anything that has to survive belongs on the customer's own server.
-class PushInbox {
-  static const _key = 'cissy.push.inbox';
-  static const _limit = 50;
-
-  static Future<void> record(RemoteMessage message) async {
-    final notification = message.notification;
-    if (notification == null) {
-      return;
-    }
-    final prefs = await SharedPreferences.getInstance();
-    final entries = prefs.getStringList(_key) ?? <String>[];
-    entries.insert(
-      0,
-      jsonEncode({
-        'title': notification.title ?? '',
-        'body': notification.body ?? '',
-        'url': PushRouter.destination(message.data) ?? '',
-        'ts': DateTime.now().millisecondsSinceEpoch,
-      }),
-    );
-    if (entries.length > _limit) {
-      entries.removeRange(_limit, entries.length);
-    }
-    await prefs.setStringList(_key, entries);
-  }
-
-  static Future<List<Map<String, dynamic>>> entries() async {
-    final prefs = await SharedPreferences.getInstance();
-    final stored = prefs.getStringList(_key) ?? <String>[];
-    final out = <Map<String, dynamic>>[];
-    for (final entry in stored) {
-      try {
-        final decoded = jsonDecode(entry);
-        if (decoded is Map<String, dynamic>) {
-          out.add(decoded);
-        }
-      } on FormatException {
-        // One unreadable entry must not empty the whole list.
-      }
-    }
-    return out;
-  }
-
-  static Future<void> clear() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_key);
   }
 }
 """
@@ -401,8 +330,7 @@ class PushService {{
   }}
 
   static Future<void> _onForeground(RemoteMessage message) async {{
-    await PushInbox.record(message);
-{show}  }}
+  {show}  }}
 
   static Future<bool> isAllowed() async {{
     final settings = await FirebaseMessaging.instance.getNotificationSettings();
@@ -657,118 +585,6 @@ class AppSettings {
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
-  }
-}
-"""
-
-
-INBOX_SCREEN = """\
-/// What this device has been sent.
-class PushInboxScreen extends StatefulWidget {
-  const PushInboxScreen({super.key, required this.onOpen});
-
-  final void Function(String url) onOpen;
-
-  @override
-  State<PushInboxScreen> createState() => PushInboxScreenState();
-}
-
-class PushInboxScreenState extends State<PushInboxScreen> {
-  List<Map<String, dynamic>> entries = const [];
-  bool loading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    refresh();
-  }
-
-  void _openSettings(BuildContext context) {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => Scaffold(
-          appBar: AppBar(title: const Text('Notifications')),
-          body: const PushSettingsScreen(),
-        ),
-      ),
-    );
-  }
-
-  Future<void> refresh() async {
-    final stored = await PushInbox.entries();
-    if (!mounted) {
-      return;
-    }
-    setState(() {
-      entries = stored;
-      loading = false;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (loading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    if (entries.isEmpty) {
-      return Column(
-        children: [
-          ListTile(
-            leading: const Icon(Icons.tune_rounded),
-            title: const Text('Notification settings'),
-            trailing: const Icon(Icons.chevron_right_rounded),
-            onTap: () => _openSettings(context),
-          ),
-          const Divider(height: 1),
-          const Expanded(
-            child: EmptyNote(
-              icon: Icons.notifications_none_rounded,
-              message: 'Notifications you receive will be listed here.',
-            ),
-          ),
-        ],
-      );
-    }
-    return Column(
-      children: [
-        ListTile(
-          leading: const Icon(Icons.tune_rounded),
-          title: const Text('Notification settings'),
-          trailing: const Icon(Icons.chevron_right_rounded),
-          onTap: () => _openSettings(context),
-        ),
-        const Divider(height: 1),
-        Expanded(
-          child: ListView.separated(
-            itemCount: entries.length,
-            separatorBuilder: (_, __) => const Divider(height: 1),
-            itemBuilder: (context, position) {
-              final entry = entries[position];
-              final url = (entry['url'] ?? '').toString();
-              return ListTile(
-                title: Text((entry['title'] ?? '').toString()),
-                subtitle: Text((entry['body'] ?? '').toString()),
-                trailing: url.isEmpty
-                    ? null
-                    : const Icon(Icons.chevron_right_rounded),
-                onTap: url.isEmpty ? null : () => widget.onOpen(url),
-              );
-            },
-          ),
-        ),
-        SafeArea(
-          top: false,
-          child: TextButton.icon(
-            onPressed: () async {
-              await PushInbox.clear();
-              await refresh();
-            },
-            icon: const Icon(Icons.delete_sweep_rounded),
-            label: const Text('Clear'),
-          ),
-        ),
-      ],
-    );
   }
 }
 """

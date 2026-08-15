@@ -83,6 +83,35 @@ body {
 
 .shell { display: grid; grid-template-columns: 250px 1fr; min-height: 100vh; }
 
+/* Folded to a rail of icons. The Studio asks for this on arrival, because it
+   is the one page that wants the width; the handle at the foot of the rail
+   puts it back, and that choice sticks for the session. */
+.shell.railed { grid-template-columns: 56px 1fr; }
+.railed .sidebar { padding-top: 14px; align-items: center; }
+.railed .side-brand { padding: 0 0 14px; }
+.railed .side-brand img { height: 26px; }
+.railed .appswitch { display: none; }
+.railed .nav-label { display: none; }
+.railed .nav-group { width: 100%; padding: 0 8px; }
+.railed .nav-item { justify-content: center; padding: 9px 0; gap: 0; }
+.railed .nav-item .navtext, .railed .nav-item .badge { display: none; }
+.railed .nav-item .gl { font-size: 20px; }
+.railed .side-foot { padding: 12px 8px; }
+.railed .side-foot .ln { justify-content: center; }
+.railed .side-foot .ln span { display: none; }
+
+/* The handle sits at the foot, so it is in the same place open or closed
+   rather than moving with the thing it opens. */
+.railtoggle {
+  margin: auto auto 6px; width: 30px; height: 30px; padding: 0;
+  display: grid; place-items: center;
+  border: 1px solid var(--hair); border-radius: 999px;
+  background: var(--surface); color: var(--ink-3); cursor: pointer;
+}
+.railtoggle:hover { color: var(--ink); border-color: rgba(38, 37, 37, 0.25); }
+.railtoggle .material-symbols-outlined { font-size: 17px; }
+.shell:not(.railed) .railtoggle .material-symbols-outlined { transform: rotate(180deg); }
+
 .sidebar {
   display: flex;
   flex-direction: column;
@@ -157,19 +186,41 @@ body {
 
 .main { min-width: 0; display: flex; flex-direction: column; }
 
+/* 62px of bar to carry one line of text and three buttons. Most of it was the
+   padding around a control that already has its own. Now 43px: the buttons set
+   the height and the bar is only the room they need. */
 .topbar {
   display: flex; align-items: center; gap: 10px;
-  padding: 12px 28px;
+  padding: 6px 28px;
   background: rgba(255, 255, 255, 0.82);
   backdrop-filter: blur(14px) saturate(160%);
   -webkit-backdrop-filter: blur(14px) saturate(160%);
   border-bottom: 1px solid var(--hair-2);
   position: sticky; top: 0; z-index: 5;
 }
-.crumb { font-weight: 650; font-size: 15px; letter-spacing: -0.01em; }
+.crumb { font-weight: 650; font-size: 14px; letter-spacing: -0.01em; }
 .spacer { flex: 1; }
 
+/* Scoped to the bar. Buttons out in the pages are hit targets on a form and
+   keep their size; these sit in a strip and only have to be legible. */
+.topbar .btn { padding: 5px 13px; font-size: 13px; }
+.topbar .avatar { width: 26px; height: 26px; font-size: 10px; }
+
 .content { padding: 28px; max-width: 1060px; width: 100%; }
+
+/* A page that is a canvas gets the top of the screen back.
+ *
+ * The stage inside it is sticky at 78px, but sticky only pins once you have
+ * scrolled far enough to push it there. Before that the stage sits at its place
+ * in the flow, and with a 28px pad and a heading above it that place was about
+ * 190px down - so the phone opened low and only settled into the middle after
+ * a scroll. Starting the canvas where the sticky position already is means the
+ * two agree from the first paint and nothing moves. */
+.content:has(> .page-canvas) { padding-top: 10px; max-width: none; }
+/* The 1060px cap is right for a page of prose and wrong for a workbench: it
+   left a strip of empty ground on the right while the panel holding a full URL
+   was 300px wide. */
+.page.page-canvas { max-width: none; }
 
 /* first paint, before the session answer arrives */
 .boot { min-height: 60vh; display: grid; place-items: center; }
@@ -775,20 +826,42 @@ body.signed-out .content { padding: 0; max-width: none; }
  * the stage in the middle because it is the thing being made. */
 
 .studio-full {
-  display: grid; grid-template-columns: 285px 1fr 300px;
+  display: grid;
+  /* The right column holds full addresses, so it is the one that suffers first
+     when there is no room. minmax(0, 1fr) rather than 1fr because the stage in
+     the middle must be allowed to be narrower than the phone it holds. */
+  grid-template-columns: 262px minmax(0, 1fr) 400px;
   gap: 20px; align-items: start;
 }
 .studio-full .group { margin-bottom: 0; }
 .studio-stage {
   display: flex; flex-direction: column; align-items: center; gap: 8px;
-  /* Centred in the viewport, not hugging the top: the stage is as tall as
-   * the visible area under the topbar and centres the phone inside it. */
+  /* Centred in the visible band under the topbar, and never taller than it.
+   *
+   * This was min-height, which is the one thing a sticky box must not have. A
+   * sticky element stops moving once its top reaches `top`, so from that
+   * moment the page scrolls and the stage does not - anything hanging below
+   * the fold is unreachable. min-height let the content set the height, and
+   * the phone with its tabs and caption comes to about 660px, so on a viewport
+   * under roughly 780px the navigation bar sat past the bottom edge with no
+   * way to scroll to it.
+   *
+   * A fixed height settles it: the box is exactly the band it is pinned in, so
+   * it cannot hang past it, and centring inside it centres against what is
+   * actually on screen. When even the band is too short the stage scrolls
+   * itself rather than hiding its own end. */
   justify-content: center;
-  min-height: calc(100vh - 120px);
-  padding: 14px 10px;
+  /* Overflow leaves by the bottom only. Plain `center` splits it top and
+   * bottom, and the top half of an overflow cannot be scrolled to. */
+  justify-content: safe center;
+  /* 45 sits the stage 2px under the 43px topbar, and 52 is that plus 7px of
+     air at the bottom. Both follow the bar - shrink it again and these move. */
+  height: calc(100vh - 52px);
+  overflow-y: auto;
+  padding: 4px 10px;
   background:
     radial-gradient(circle at 50% 42%, rgba(1, 166, 255, 0.07), transparent 70%);
-  position: sticky; top: 78px;
+  position: sticky; top: 45px;
 }
 
 .modlib-card { padding-bottom: 16px; }
@@ -823,17 +896,157 @@ body.signed-out .content { padding: 0; max-width: none; }
   padding: 1px 7px;
 }
 
+/* ── the splash card ─────────────────────────────────────────────────────
+   Settings on the left, two small phones on the right. Two, because there are
+   two colours and one phone cannot show both - which is the whole reason this
+   card has a preview when the rest of Branding does not. */
+
+.splashrow {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto;
+  gap: 26px; align-items: start;
+}
+@media (max-width: 900px) { .splashrow { grid-template-columns: 1fr; } }
+
+.wells { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.well > b { display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px; }
+.well .colorrow { gap: 8px; }
+.well .colorwell { width: 40px; }
+
+.splashpreview { display: flex; gap: 14px; }
+.spfig { margin: 0; text-align: center; }
+.spfig figcaption { font-size: 11px; color: var(--ink-3); margin-top: 7px; }
+
+/* A phone rather than a black rectangle: a hairline of aluminium, the screen
+   inset inside it, an island at the top and the buttons on the edges. The
+   frame is light because a heavy black bezel would be the loudest thing on a
+   card whose entire subject is a colour. */
+.sp {
+  position: relative; width: 104px; height: 210px; padding: 3px;
+  border: 1px solid #cdd2d9; border-radius: 20px;
+  background: linear-gradient(160deg, #f4f6f8, #e4e8ed 46%, #f0f2f5);
+  box-shadow: 0 8px 22px -12px rgba(20, 40, 60, 0.38);
+}
+.sp::before, .sp::after {
+  content: ''; position: absolute; width: 2px; border-radius: 2px;
+  background: #c6ccd4;
+}
+.sp::before { left: -2px; top: 44px; height: 26px; }
+.sp::after { right: -2px; top: 52px; height: 34px; }
+
+.spscreen {
+  position: relative; width: 100%; height: 100%; border-radius: 17px;
+  overflow: hidden; display: grid; place-items: center; background: #fff;
+  transition: background 180ms var(--ease);
+}
+.spscreen::before {
+  content: ''; position: absolute; top: 6px; left: 50%; transform: translateX(-50%);
+  width: 28px; height: 7px; border-radius: 99px;
+  background: rgba(0, 0, 0, 0.72); z-index: 2;
+}
+.spscreen img { width: 44px; height: 44px; object-fit: contain; }
+.spscreen.cover img { width: 100%; height: 100%; object-fit: cover; }
+
+.needicon {
+  display: flex; gap: 11px; align-items: flex-start; margin-bottom: 14px;
+  border: 1px solid var(--warn); background: rgba(240, 184, 75, 0.1);
+  border-radius: var(--r); padding: 11px 12px;
+}
+.needicon .material-symbols-outlined { font-size: 19px; color: var(--warn-ink); flex: none; }
+.needicon b { display: block; font-size: 12.5px; }
+.needicon .hint { margin-top: 2px; }
+
 .colorrow { display: flex; gap: 10px; align-items: center; }
 .colorwell {
   width: 46px; height: 38px; padding: 2px; border: 1px solid var(--hair);
   border-radius: var(--r); background: var(--surface); cursor: pointer;
 }
 
+/* One tab: a row of controls, the icon choices under it, and the collapsed
+   "also lights up on" panel under that. Bounded so two tabs read as two
+   things rather than one long column of inputs. */
+.tabcard {
+  border: 1px solid var(--hair-2); border-radius: var(--r);
+  padding: 10px; margin-bottom: 10px;
+}
+.tabcard:last-child { margin-bottom: 0; }
+
+/* A tab: icon and name on one line, the link under it, a dots menu in the
+   corner. It was five controls on a single row in a 300px column, which left
+   the label and the link about 28px wide each. */
+.tabtop { display: flex; align-items: center; gap: 7px; }
+.tabtop .input { min-width: 0; flex: 1; }
+.tabcard > .input { margin-top: 7px; }
+
+.tabcorner { position: relative; flex: none; }
+.tabmore {
+  display: grid; place-items: center; width: 28px; height: 28px; padding: 0;
+  border: 0; border-radius: 8px; background: none; color: var(--ink-3);
+  cursor: pointer;
+}
+.tabmore:hover { background: var(--hair-2); color: var(--ink); }
+.tabmore .material-symbols-outlined { font-size: 18px; }
+
+.tabmenu {
+  position: absolute; right: 0; top: calc(100% + 4px); z-index: 10;
+  min-width: 132px; padding: 4px;
+  background: var(--surface); border: 1px solid var(--hair);
+  border-radius: var(--r); box-shadow: var(--shadow-pop);
+}
+.tabmenu[hidden] { display: none; }
+.tabmenuitem {
+  display: block; width: 100%; text-align: left; border: 0; background: none;
+  font: inherit; font-size: 12.5px; color: var(--err-ink);
+  padding: 7px 9px; border-radius: 7px; cursor: pointer;
+}
+.tabmenuitem:hover { background: rgba(240, 93, 104, 0.09); }
+
+/* Still used by the notification topics, which are four controls on one row. */
 .tabedit {
-  display: grid; grid-template-columns: 1.1fr 1fr 1.2fr auto auto; gap: 8px;
+  display: grid; grid-template-columns: 1.1fr 1.2fr auto auto; gap: 8px;
   margin-bottom: 8px; align-items: center;
 }
 .tabedit .input { margin: 0; }
+
+/* The icon, as a button showing the icon. Closed, a tab is one line. */
+.icontrigger {
+  display: inline-flex; align-items: center; gap: 1px;
+  height: 34px; padding: 0 4px 0 7px;
+  border: 1px solid var(--hair); border-radius: var(--r);
+  background: var(--surface); color: var(--accent-ink); cursor: pointer;
+}
+.icontrigger:hover { border-color: rgba(38, 37, 37, 0.25); }
+.icontrigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.icontrigger[aria-expanded="true"] { border-color: var(--accent); background: var(--accent-dim); }
+.icontrigger .caret { font-size: 16px; color: var(--ink-3); }
+.icontrigger[aria-expanded="true"] .caret { transform: rotate(180deg); }
+
+.icondrawer { margin-top: 8px; }
+.icondrawer[hidden] { display: none; }
+.input.sm { padding: 6px 10px; font-size: 12.5px; }
+
+/* The icons themselves, as the choices. Wraps to as many rows as it needs, so
+   the panel getting narrower costs a line rather than a scrollbar, and scrolls
+   past about six rows rather than pushing the next tab off the screen. */
+.iconpick {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(30px, 1fr));
+  gap: 4px; margin-top: 7px; max-height: 200px; overflow-y: auto;
+  align-content: start; padding-right: 2px;
+}
+.iconnone { grid-column: 1 / -1; margin: 6px 0; text-align: center; }
+.iconopt {
+  display: grid; place-items: center; height: 30px;
+  border: 1px solid var(--hair-2); border-radius: 8px;
+  background: var(--surface); color: var(--ink-3);
+  cursor: pointer; padding: 0;
+  transition: border-color 120ms var(--ease), background 120ms var(--ease),
+    color 120ms var(--ease);
+}
+.iconopt .material-symbols-outlined { font-size: 18px; }
+.iconopt:hover { border-color: rgba(38, 37, 37, 0.25); color: var(--ink-2); }
+.iconopt.on {
+  border-color: var(--accent); background: var(--accent-dim); color: var(--accent-ink);
+}
+.iconopt:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* the paths that also light a tab up - disclosed, because most tabs have none */
 .tabmatch {
@@ -849,8 +1062,19 @@ body.signed-out .content { padding: 0; max-width: none; }
   background: var(--surface); border: 9px solid var(--console);
   border-radius: 28px; overflow: hidden; box-shadow: var(--shadow-2);
 }
+/* The one in the Studio. Its height is whatever the stage has left, so the
+   space taken off the top of the bar and out from above the phone arrives here
+   rather than turning into more empty stage.
+
+   The width does not move with it. The site inside is an iframe laid out at
+   360px and scaled by a fixed 0.6611 to reach the 238px body - see .pm-site -
+   so a fluid width would scale the real website wrongly. Height is free,
+   because that scale is a percentage. */
 .phone-mock.lg {
-  width: 258px; height: 532px; border-width: 10px; border-radius: 36px;
+  width: 258px;
+  height: min(760px, calc(100vh - 60px));
+  flex: none;
+  border-width: 10px; border-radius: 36px;
   box-shadow: 0 18px 44px rgba(20, 40, 60, 0.22);
 }
 .pm-status {
@@ -961,8 +1185,11 @@ body.signed-out .content { padding: 0; max-width: none; }
   .studio-stage {
     grid-column: 1 / -1; grid-row: 1; position: static; padding: 14px 0;
     /* Stacked above the panels here, so a viewport-tall stage would just be
-     * a screen of empty space to scroll past. */
-    min-height: 0;
+     * a screen of empty space to scroll past. Nothing is pinned either, so
+     * the height cap and its scrollbar come off with it - the page scroll
+     * reaches everything on its own. */
+    height: auto;
+    overflow: visible;
   }
 }
 @media (max-width: 860px) {

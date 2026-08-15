@@ -13,42 +13,24 @@ from __future__ import annotations
 
 import json
 
-from ..config import NAV_NATIVE_TARGETS, NAV_NOTIFICATIONS, AppConfig
-from .common import dart_string, with_url_flag
+from ..config import NAV_ICONS, AppConfig
+from .common import dart_string, splash_widget, with_url_flag
 
 
 # ── the navigation shell ─────────────────────────────────────────────────
 
 # Tab icon names (config.NAV_ICONS) to the IconData the generated app uses.
-_NAV_ICONS_DART = {
-    "home": "Icons.home_rounded",
-    "storefront": "Icons.storefront_rounded",
-    "menu_book": "Icons.menu_book_rounded",
-    "article": "Icons.article_rounded",
-    "shopping_bag": "Icons.shopping_bag_rounded",
-    "event": "Icons.event_rounded",
-    "call": "Icons.call_rounded",
-    "person": "Icons.person_rounded",
-    "bookmark": "Icons.bookmark_rounded",
-    "download": "Icons.download_rounded",
-    "settings": "Icons.settings_rounded",
-    "info": "Icons.info_rounded",
-}
-
-
-_NATIVE_DEFAULT_ICONS = {
-    "native:saved": "Icons.bookmark_rounded",
-    "native:downloads": "Icons.download_rounded",
-    "native:settings": "Icons.settings_rounded",
-    "native:notifications": "Icons.notifications_rounded",
-}
+#
+# Derived rather than written out. Every name in NAV_ICONS is a Flutter icon
+# with a rounded variant - that is the rule the list is chosen by - so a second
+# hand-kept copy of it here could only ever drift out of step with the first.
+_NAV_ICONS_DART = {name: f"Icons.{name}_rounded" for name in NAV_ICONS}
 
 
 def _nav_icon(tab: dict[str, str]) -> str:
-    icon = tab.get("icon", "")
-    if icon in _NAV_ICONS_DART:
-        return _NAV_ICONS_DART[icon]
-    return _NATIVE_DEFAULT_ICONS.get(tab.get("target", ""), "Icons.public_rounded")
+    # A globe for anything unknown. validate() refuses an unknown name, so this
+    # is only reached by a tab saved before the name was retired.
+    return _NAV_ICONS_DART.get(tab.get("icon", ""), "Icons.public_rounded")
 
 
 def _resolve_target(config: AppConfig, target: str) -> str:
@@ -70,8 +52,7 @@ def tab_matches(config: AppConfig) -> list[list[str]]:
 
     A tab's own path is included automatically - a Shop tab pointing at /shop
     should light up on /shop without anyone configuring it - and the extra
-    paths from the Studio come after it. Native tabs match nothing: they are
-    not showing a page of the website at all.
+    paths from the Studio come after it.
 
     Only targets written as a path contribute. A tab pointing at a full URL on
     another host has a path of "/" as far as this is concerned, and "/" matches
@@ -80,9 +61,6 @@ def tab_matches(config: AppConfig) -> list[list[str]]:
     matches: list[list[str]] = []
     for tab in config.nav_tabs:
         target = tab.get("target", "")
-        if target in NAV_NATIVE_TARGETS or target == NAV_NOTIFICATIONS:
-            matches.append([])
-            continue
         paths = []
         if target.startswith("/"):
             paths.append(target)
@@ -120,28 +98,18 @@ _TAB_FOR_URL = """\
 """
 
 
-def _root_shell(config: AppConfig, *, splash_asset: str | None) -> str:
+def _root_shell(
+    config: AppConfig, *, splash_asset: str | None, icon_asset: str | None = None
+) -> str:
+    # Every tab is a page of the website, so tab N is web view N. There used to
+    # be a slot table here because a native tab owned no web view and shifted
+    # every index after it.
     tabs = list(config.nav_tabs)
     targets = [tab.get("target", "") for tab in tabs]
-    web_slots = []          # per tab: its web view's key index, or -1
-    web_count = 0
-    for target in targets:
-        if target in NAV_NATIVE_TARGETS or target == NAV_NOTIFICATIONS:
-            web_slots.append(-1)
-        else:
-            web_slots.append(web_count)
-            web_count += 1
-    primary_index = web_slots.index(0)
-    saved_index = targets.index("native:saved") if "native:saved" in targets else -1
-    downloads_index = (
-        targets.index("native:downloads") if "native:downloads" in targets else -1
-    )
-    has_settings_tab = "native:settings" in targets
-    inbox_index = (
-        targets.index(NAV_NOTIFICATIONS) if NAV_NOTIFICATIONS in targets else -1
-    )
-    needs_open = saved_index >= 0 or has_settings_tab or inbox_index >= 0
-    has_splash = splash_asset is not None
+    web_count = len(tabs)
+    # The icon splash needs no upload of its own, so a splash now exists
+    # whenever the style is the icon one - not only when a file was given.
+    has_splash = config.splash_style != "image" or splash_asset is not None
     matches = tab_matches(config)
     has_echo = has_tab_echo(config)
 
@@ -157,7 +125,7 @@ def _root_shell(config: AppConfig, *, splash_asset: str | None) -> str:
     add("}")
     add("")
     add("class _RootShellState extends State<RootShell> {")
-    add(f"  int index = {primary_index};")
+    add("  int index = 0;")
     if has_echo:
         add("")
         add("  /// A tab lit by the page on screen rather than by a tap.")
@@ -173,45 +141,25 @@ def _root_shell(config: AppConfig, *, splash_asset: str | None) -> str:
     add(f"    {web_count},")
     add("    (_) => GlobalKey<_WebViewScreenState>(),")
     add("  );")
-    if saved_index >= 0:
-        add("  final savedKey = GlobalKey<_SavedScreenState>();")
-    if downloads_index >= 0:
-        add("  final downloadsKey = GlobalKey<_DownloadsScreenState>();")
-    if inbox_index >= 0:
-        add("  final inboxKey = GlobalKey<PushInboxScreenState>();")
     add("")
     if has_echo:
         add("  /// The paths each tab lights up for, in tab order.")
         add(f"  static const navMatches = <List<String>>{json.dumps(matches)};")
         add("")
-    add("  /// Which web view each tab uses; -1 marks a native screen.")
-    add(f"  static const webSlots = <int>{json.dumps(web_slots)};")
-    add("")
     add("  late final List<Widget> pages = [")
-    for position, tab in enumerate(tabs):
-        target = targets[position]
-        slot = web_slots[position]
-        if target == "native:saved":
-            add("    SavedScreen(key: savedKey, onOpen: _openInPrimary),")
-        elif target == "native:downloads":
-            add("    DownloadsScreen(key: downloadsKey),")
-        elif target == "native:settings":
-            add("    SettingsScreen(onOpen: _openInPrimary),")
-        elif target == NAV_NOTIFICATIONS:
-            add("    PushInboxScreen(key: inboxKey, onOpen: _openInPrimary),")
+    for position, target in enumerate(targets):
+        url = dart_string(_resolve_target(config, target))
+        add("    WebViewScreen(")
+        add(f"      key: webKeys[{position}],")
+        add(f"      initialUrl: {url},")
+        if position == 0:
+            if has_splash:
+                add("      onFirstLoad: _dismissSplash,")
         else:
-            url = dart_string(_resolve_target(config, target))
-            add("    WebViewScreen(")
-            add(f"      key: webKeys[{slot}],")
-            add(f"      initialUrl: {url},")
-            if slot == 0:
-                if has_splash:
-                    add("      onFirstLoad: _dismissSplash,")
-            else:
-                add("      primary: false,")
-            if has_echo:
-                add(f"      onUrlChanged: (url) => _onUrlChanged({position}, url),")
-            add("    ),")
+            add("      primary: false,")
+        if has_echo:
+            add(f"      onUrlChanged: (url) => _onUrlChanged({position}, url),")
+        add("    ),")
     add("  ];")
     add("")
     if has_splash:
@@ -219,12 +167,6 @@ def _root_shell(config: AppConfig, *, splash_asset: str | None) -> str:
         add("    if (mounted && showSplash) {")
         add("      setState(() => showSplash = false);")
         add("    }")
-        add("  }")
-        add("")
-    if needs_open:
-        add("  void _openInPrimary(String url) {")
-        add(f"    setState(() => index = {primary_index});")
-        add("    webKeys[0].currentState?._load(Uri.parse(url));")
         add("  }")
         add("")
     if has_echo:
@@ -252,33 +194,16 @@ def _root_shell(config: AppConfig, *, splash_asset: str | None) -> str:
         add("    });")
     else:
         add("    setState(() => index = value);")
-    if saved_index >= 0:
-        add(f"    if (value == {saved_index}) {{")
-        add("      savedKey.currentState?.refresh();")
-        add("    }")
-    if downloads_index >= 0:
-        add(f"    if (value == {downloads_index}) {{")
-        add("      downloadsKey.currentState?.refresh();")
-        add("    }")
-    if inbox_index >= 0:
-        # The background isolate writes the inbox, so what is on screen can be
-        # out of date the moment the app comes back.
-        add(f"    if (value == {inbox_index}) {{")
-        add("      inboxKey.currentState?.refresh();")
-        add("    }")
     add("  }")
     add("")
     add("  Future<void> _handleBack() async {")
-    add("    final slot = webSlots[index];")
-    add("    if (slot >= 0) {")
-    add("      final web = webKeys[slot].currentState;")
-    add("      if (await web?.canGoBack() == true) {")
-    add("        await web?.goBack();")
-    add("        return;")
-    add("      }")
+    add("    final web = webKeys[index].currentState;")
+    add("    if (await web?.canGoBack() == true) {")
+    add("      await web?.goBack();")
+    add("      return;")
     add("    }")
-    add(f"    if (index != {primary_index}) {{")
-    add(f"      setState(() => index = {primary_index});")
+    add("    if (index != 0) {")
+    add("      setState(() => index = 0);")
     add("      return;")
     add("    }")
     add("    SystemNavigator.pop();")
@@ -311,13 +236,15 @@ def _root_shell(config: AppConfig, *, splash_asset: str | None) -> str:
     add("            ),")
     add("          ),")
     if has_splash:
+        widget = splash_widget(
+            config, splash_asset=splash_asset, icon_asset=icon_asset, indent=12
+        ).splitlines()
         add("          if (showSplash)")
-        add("            Image.asset(")
-        add(f"              {dart_string(splash_asset)},")
-        add("              fit: BoxFit.cover,")
-        add("              width: double.infinity,")
-        add("              height: double.infinity,")
-        add("            ),")
+        # The builder indents for the deeper of the two call sites, so the
+        # first line is placed and the rest keep their shape relative to it.
+        add(f"            {widget[0]}")
+        for line in widget[1:]:
+            add(line)
     add("        ],")
     add("      ),")
     add("    );")

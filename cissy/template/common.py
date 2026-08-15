@@ -11,7 +11,11 @@ from __future__ import annotations
 import json
 import re
 
-from ..config import AppConfig
+from ..config import (
+    DEFAULT_SPLASH_DARK,
+    DEFAULT_SPLASH_LIGHT,
+    AppConfig,
+)
 
 
 DEPENDENCIES = {
@@ -94,3 +98,82 @@ def _host_of(url: str) -> str:
     from urllib.parse import urlparse
 
     return (urlparse(url).hostname or "").lower()
+
+
+def dart_color(value: str, fallback: str) -> str:
+    """A hex string as a Dart Color literal."""
+    return f"const Color(0xFF{(value or fallback).lstrip('#').upper()})"
+
+
+def splash_widget(
+    config: AppConfig,
+    *,
+    splash_asset: str | None,
+    icon_asset: str | None,
+    indent: int = 18,
+) -> str:
+    """What covers the app while the first page loads.
+
+    Two shapes. The icon on a background is the default and needs no upload of
+    its own: the launcher icon is already there, it cannot be cropped by a
+    phone whose aspect ratio nobody predicted, and the background can follow
+    the system into dark mode - which one flat image cannot do at all.
+
+    Returned as an expression rather than a statement, so each caller places it
+    where its own widget tree needs it.
+    """
+    pad = " " * indent
+    if config.splash_style == "image":
+        if not splash_asset:
+            return "const SizedBox.expand()"
+        return "\n".join([
+            "Image.asset(",
+            f"{pad}  {dart_string(splash_asset)},",
+            f"{pad}  fit: BoxFit.cover,",
+            f"{pad}  width: double.infinity,",
+            f"{pad}  height: double.infinity,",
+            f"{pad})",
+        ])
+
+    background = _splash_background(config, indent)
+    if not icon_asset:
+        # Nothing to centre. A plain surface rather than an empty box, so the
+        # moment still reads as the app starting rather than as a failure.
+        return "\n".join([
+            "ColoredBox(",
+            f"{pad}  color: {background},",
+            f"{pad}  child: const SizedBox.expand(),",
+            f"{pad})",
+        ])
+
+    return "\n".join([
+        "ColoredBox(",
+        f"{pad}  color: {background},",
+        f"{pad}  child: Center(",
+        f"{pad}    child: Image.asset(",
+        f"{pad}      {dart_string(icon_asset)},",
+        f"{pad}      width: 132,",
+        f"{pad}      height: 132,",
+        f"{pad}    ),",
+        f"{pad}  ),",
+        f"{pad})",
+    ])
+
+
+def _splash_background(config: AppConfig, indent: int) -> str:
+    """The colour under the icon, chosen by the phone's own dark-mode setting.
+
+    platformBrightnessOf rather than Theme.of: the splash is painted before the
+    app's own theme has settled, and the question is what the phone is doing,
+    not what the app decided.
+    """
+    pad = " " * indent
+    light = dart_color(config.splash_bg_light, DEFAULT_SPLASH_LIGHT)
+    dark = dart_color(config.splash_bg_dark, DEFAULT_SPLASH_DARK)
+    if light == dark:
+        return light
+    return "\n".join([
+        "MediaQuery.platformBrightnessOf(context) == Brightness.dark",
+        f"{pad}      ? {dark}",
+        f"{pad}      : {light}",
+    ])

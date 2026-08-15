@@ -15,11 +15,6 @@ const NAV_ICONS = ['home', 'storefront', 'menu_book', 'article', 'shopping_bag',
   'event', 'call', 'person', 'bookmark', 'download', 'settings', 'info'];
 
 // target value → [label, which feature it needs]
-const NAV_NATIVE_TARGETS = {
-  'native:saved': ['Saved items screen', 'Saved items'],
-  'native:downloads': ['Downloads screen', 'Downloads'],
-  'native:settings': ['Settings screen', 'Settings screen'],
-};
 
 const state = {
   apps: [],
@@ -34,6 +29,7 @@ const state = {
   pending: null,       // a phone part-way through signup
   reset: null,         // a phone part-way through a forgotten password
   streaming: null,
+  railPinned: null,   // null until the handle is touched, then the user's
 };
 
 /* ── tiny DOM helper ─────────────────────────────────────────────────── */
@@ -269,13 +265,13 @@ async function refreshHealth(force = false) {
   clear(foot).append(
     el('div', { class: 'ln ' + (health.ok ? 'good' : 'bad') }, [
       el('i', { class: 'dot' }),
-      health.ok ? 'Toolchain ready' : 'Toolchain not ready',
+      el('span', { text: health.ok ? 'Toolchain ready' : 'Toolchain not ready' }),
     ]),
   );
   for (const tool of health.tools) {
-    foot.append(el('div', { class: 'ln', text: tool.ok
+    foot.append(el('div', { class: 'ln' }, [el('span', { text: tool.ok
       ? `${tool.name} ${tool.version}`
-      : `${tool.name} - ${tool.detail}` }));
+      : `${tool.name} - ${tool.detail}` })]));
   }
 }
 
@@ -700,7 +696,6 @@ const APP_PAGES = [
   ['webview', 'WebView', 'webview', 'The website the app wraps, and how it behaves.'],
   ['branding', 'Branding', 'branding', 'The icon and the splash screen.'],
   ['studio', 'Studio', 'studio', 'Modules, theme and navigation - with a live preview.'],
-  ['offline', 'Offline', 'offline', 'What the app does when the connection is gone.'],
   ['notifications', 'Notifications', 'notifications',
     'Push notifications, through your own Firebase project.'],
   ['signing', 'Signing', 'signing', 'The key that proves every release comes from you.'],
@@ -748,8 +743,15 @@ function renderAccount() {
   }));
 }
 
+/* A nav label, as an element rather than a text node, so the folded rail has
+ * something to hide. */
+function navText(label) {
+  return el('span', { class: 'navtext', text: label });
+}
+
 function renderSidebar() {
   renderAccount();
+  renderRail();
   const nav = clear(document.getElementById('side-nav'));
 
   const onBilling = location.hash.startsWith('#/billing');
@@ -757,21 +759,21 @@ function renderSidebar() {
   if (!state.app) {
     nav.append(el('div', { class: 'nav-group' }, [
       el('button', { class: 'nav-item' + (onBilling ? '' : ' active'), onclick: () => go('#/') }, [
-        icon('apps'), 'All apps',
+        icon('apps'), navText('All apps'),
         el('span', { class: 'badge', text: String(state.apps.length) }),
       ]),
       el('button', { class: 'nav-item', onclick: newAppDialog }, [
-        icon('plus'), 'New app',
+        icon('plus'), navText('New app'),
       ]),
       el('button', { class: 'nav-item' + (onBilling ? ' active' : ''), onclick: () => go('#/billing') }, [
-        icon('billing'), 'Billing',
+        icon('billing'), navText('Billing'),
       ]),
       el('a', { class: 'nav-item', href: '/docs' }, [
-        icon('docs'), 'Documentation',
+        icon('docs'), navText('Documentation'),
       ]),
       state.user && state.user.is_admin
         ? el('button', { class: 'nav-item', onclick: () => go('#/admin') }, [
-            icon('admin'), 'Admin',
+            icon('admin'), navText('Admin'),
           ])
         : null,
     ]));
@@ -791,13 +793,39 @@ function renderSidebar() {
         el('button', {
           class: 'nav-item' + (state.section === id ? ' active' : ''),
           onclick: () => go(`#/app/${state.app.id}/${id}`),
-        }, [icon(glyph), label]),
+        }, [icon(glyph), navText(label)]),
       ),
       el('a', { class: 'nav-item', href: '/docs' }, [
-        icon('docs'), 'Documentation',
+        icon('docs'), navText('Documentation'),
       ]),
     ]),
   );
+}
+
+/* The sidebar folded to a rail of icons.
+ *
+ * The Studio asks for it on arrival - it is the one page that wants the width,
+ * and 194px is most of a panel. Touching the handle is a decision, so from then
+ * on the choice is the user's for the rest of the session and no page overrides
+ * it again. */
+function renderRail() {
+  const shell = document.querySelector('.shell');
+  if (!shell) return;
+  const wanted = state.railPinned === null
+    ? state.section === 'studio'
+    : state.railPinned;
+  shell.classList.toggle('railed', Boolean(wanted));
+
+  const toggle = document.getElementById('rail-toggle');
+  if (toggle) {
+    toggle.title = wanted ? 'Widen the sidebar' : 'Fold the sidebar';
+  }
+}
+
+function toggleRail() {
+  const shell = document.querySelector('.shell');
+  state.railPinned = !shell.classList.contains('railed');
+  renderRail();
 }
 
 /* ── app list ────────────────────────────────────────────────────────── */
@@ -1042,17 +1070,23 @@ async function showAppPage(appId, section) {
     overview: () => overviewPage(app, builds),
     identity: () => identitySection(draft, bind),
     webview: () => webviewSection(draft, bind, markDirty),
-    branding: () => brandingSection(app),
+    branding: () => brandingSection(app, draft, markDirty),
     studio: () => studioPage(app, draft, markDirty),
-    offline: () => offlineSection(draft, markDirty),
     notifications: () => notificationsSection(app, draft, markDirty),
     signing: () => signingSection(app),
     build: () => buildSection(app),
   };
 
+  // The Studio is a canvas rather than a page of fields, and a canvas wants the
+  // height. Its heading said "Studio" directly under a topbar already reading
+  // "<app> · Studio", and that repetition cost about 115px - which is the
+  // difference between the phone sitting in the middle of the screen and
+  // sitting below it until you scroll.
+  const canvas = state.section === 'studio';
+
   clear(document.getElementById('content')).append(
-    el('div', { class: 'page' }, [
-      el('div', { class: 'page-head' }, [
+    el('div', { class: 'page' + (canvas ? ' page-canvas' : '') }, [
+      canvas ? null : el('div', { class: 'page-head' }, [
         el('h2', { class: 'sec', text: label }),
         el('p', { class: 'sub', text: subtitle }),
       ]),
@@ -1265,13 +1299,133 @@ function webviewSection(draft, bind, markDirty) {
   ]);
 }
 
-function brandingSection(app) {
-  return fieldset('branding', '', [
-    el('div', { class: 'row2' }, [
-      uploadSlot(app, 'icon', 'App icon', 'PNG, ideally 1024×1024', '.png'),
-      uploadSlot(app, 'splash', 'Splash image', 'Shown while the first page loads', '.png,.jpg,.jpeg'),
+const SPLASH_LIGHT = '#ffffff';
+const SPLASH_DARK = '#101014';
+
+function brandingSection(app, draft, markDirty) {
+  return el('div', {}, [
+    fieldset('branding', '', [
+      el('div', { class: 'row2' }, [
+        uploadSlot(app, 'icon', 'App icon', 'PNG, ideally 1024×1024', '.png'),
+        uploadSlot(app, 'splash', 'Splash image',
+          'Only used when the splash below is set to an image', '.png,.jpg,.jpeg'),
+      ]),
     ]),
+    splashSection(app, draft, markDirty),
   ]);
+}
+
+/* What covers the app while the first page loads.
+ *
+ * The default is the icon on a background rather than an uploaded image: the
+ * icon is already there, it cannot be cropped by a phone whose aspect nobody
+ * predicted, and the background can follow the system into dark mode, which one
+ * flat image cannot. So the two phones are the whole point of this card - two
+ * colours cannot be shown on one. */
+function splashSection(app, draft, markDirty) {
+  const card = el('section', { class: 'group', id: 'sec-splash' });
+
+  const style = el('select', { class: 'input' }, [
+    el('option', { value: 'icon', text: 'Your app icon on a background',
+      selected: draft.splash_style !== 'image' }),
+    el('option', { value: 'image', text: 'The image above, edge to edge',
+      selected: draft.splash_style === 'image' }),
+  ]);
+  style.addEventListener('change', () => {
+    draft.splash_style = style.value; markDirty(); render();
+  });
+
+  const light = colourWell('splash_bg_light', SPLASH_LIGHT);
+  const dark = colourWell('splash_bg_dark', SPLASH_DARK);
+
+  function colourWell(key, fallback) {
+    const value = () => draft[key] || fallback;
+    const well = el('input', { class: 'colorwell', type: 'color', value: value() });
+    const hex = el('input', { class: 'input mono', value: value() });
+    const set = (next) => {
+      draft[key] = next;
+      well.value = next; hex.value = next;
+      markDirty(); paintPhones();
+    };
+    well.addEventListener('input', () => set(well.value));
+    hex.addEventListener('input', () => {
+      // Only once it is a colour. Repainting on "#1" would flash black between
+      // every keystroke of a hex somebody is typing out by hand.
+      if (/^#[0-9a-fA-F]{6}$/.test(hex.value)) set(hex.value.toLowerCase());
+    });
+    return { node: el('div', { class: 'colorrow' }, [well, hex]), value };
+  }
+
+  const phones = ['light', 'dark'].map((mode) => {
+    const shot = el('div', { class: 'spscreen' });
+    return {
+      mode,
+      shot,
+      node: el('figure', { class: 'spfig' }, [
+        el('div', { class: 'sp' }, [shot]),
+        el('figcaption', { text: mode === 'light' ? 'Light' : 'Dark' }),
+      ]),
+    };
+  });
+
+  function paintPhones() {
+    const image = draft.splash_style === 'image';
+    const stamp = Date.parse(app.updated_at) || 0;
+    for (const phone of phones) {
+      const file = image ? app.splash_file : app.icon_file;
+      const slot = image ? 'splash' : 'icon';
+      phone.shot.style.background = image
+        ? '#1c1b1b'
+        : (phone.mode === 'dark' ? dark.value() : light.value());
+      phone.shot.classList.toggle('cover', image);
+      clear(phone.shot);
+      if (file) {
+        phone.shot.append(el('img', {
+          alt: '', src: `/api/apps/${app.id}/files/${slot}?t=${stamp}`,
+        }));
+      }
+    }
+  }
+
+  function render() {
+    const image = draft.splash_style === 'image';
+    const needsIcon = !image && !app.icon_file;
+
+    clear(card).append(
+      el('h3', { class: 'group-title', text: 'Splash screen' }),
+      el('div', { class: 'splashrow' }, [
+        el('div', {}, [
+          field('Screen', style),
+          needsIcon
+            ? el('div', { class: 'needicon' }, [
+                icon('image'),
+                el('div', {}, [
+                  el('b', { text: 'Upload an app icon first' }),
+                  el('div', { class: 'hint',
+                    text: 'This splash shows your icon, and there is not one yet.' }),
+                ]),
+              ])
+            : null,
+          image ? null : el('div', { class: 'wells' }, [
+            el('div', { class: 'well' }, [
+              el('b', { text: 'Light mode' }), light.node,
+            ]),
+            el('div', { class: 'well' }, [
+              el('b', { text: 'Dark mode' }), dark.node,
+            ]),
+          ]),
+          el('p', { class: 'hint', text: image
+            ? 'Filled edge to edge, so anything close to the border may be cropped.'
+            : 'The phone picks which of the two by its own dark-mode setting.' }),
+        ]),
+        el('div', { class: 'splashpreview' }, phones.map((phone) => phone.node)),
+      ]),
+    );
+    paintPhones();
+  }
+
+  render();
+  return card;
 }
 
 function uploadSlot(app, slot, label, hint, accept) {
@@ -1377,9 +1531,6 @@ async function removeFile(appId, slot) {
 // Tiles that toggle a feature by name. Everything else on the library is
 // either always in the app or explicitly not built yet.
 const STUDIO_MODULES = [
-  ['bookmark', 'Saved items', 'Bookmarks and recents, kept on the device'],
-  ['download', 'Downloads', 'Save files to the phone and open them'],
-  ['settings', 'Settings screen', 'Clear cache, about, open the website'],
   ['share', 'Native sharing', "The phone's share sheet on every page"],
   ['refresh', 'Pull to refresh', 'Swipe down to reload'],
   ['upload_file', 'File upload', 'Lets the site open the file picker'],
@@ -1403,6 +1554,16 @@ function studioPage(app, draft, markDirty) {
   draft.nav_tabs = (draft.nav_tabs || []).map((tab) => ({
     ...tab, match: [...(tab.match || [])],
   }));
+
+  /* The site's own address, with a slash on the end.
+   *
+   * A tab's link starts here, so the box opens ready to have "shop" typed onto
+   * it. A placeholder would have said the same thing and then vanished at the
+   * first keystroke, leaving the question of whether a path or a full address
+   * was wanted unanswered at exactly the moment it was being asked. */
+  function homeLink() {
+    return `${(draft.website_url || '').replace(/\/+$/, '')}/`;
+  }
   draft.nav_style = draft.nav_style || 'none';
   draft.features = [...(draft.features || [])];
   draft.hide_selectors = [...(draft.hide_selectors || [])];
@@ -1430,15 +1591,6 @@ function studioPage(app, draft, markDirty) {
     if (on) current.add(name); else current.delete(name);
     draft.features = [...current];
     markDirty(); renderLibrary(); renderPreview();
-  };
-
-  const ensureFeatureFor = (target) => {
-    const need = (NAV_NATIVE_TARGETS[target] || [])[1];
-    if (need && !has(need)) {
-      draft.features = [...draft.features, need];
-      renderLibrary();
-      toast(`Enabled the ${need} module for that tab`);
-    }
   };
 
   /* the library */
@@ -1522,10 +1674,9 @@ function studioPage(app, draft, markDirty) {
     styleSel.value = draft.nav_style;
     if (on && !draft.nav_tabs.length) {
       draft.nav_tabs = [
-        { label: 'Home', icon: 'home', target: '/' },
-        { label: 'Settings', icon: 'settings', target: 'native:settings' },
+        { label: 'Home', icon: 'home', target: homeLink() },
+        { label: 'Shop', icon: 'storefront', target: `${homeLink()}shop` },
       ];
-      ensureFeatureFor('native:settings');
     }
     markDirty(); renderLibrary(); renderTabs(); renderSiteNavCard(); renderPreview();
   }
@@ -1538,97 +1689,97 @@ function studioPage(app, draft, markDirty) {
       tab.label = label.value; markDirty(); renderPreview();
     });
 
-    const icon = el('select', { class: 'input' }, NAV_ICONS.map((name) =>
-      el('option', { value: name, text: name.replace(/_/g, ' '),
-        selected: (tab.icon || 'home') === name })));
-    icon.addEventListener('change', () => {
-      tab.icon = icon.value; markDirty(); renderPreview();
+    /* The icon, as a button showing the icon, and a searchable grid behind it.
+     *
+     * This was a <select> of names: you chose "menu book" and found out what it
+     * looked like by watching the phone redraw, on the one screen whose whole
+     * job is showing you what things look like. Drawing all of them instead was
+     * worse - a hundred and twenty-six buttons per tab, five tabs, in a 300px
+     * column. Closed by default is the only version of this that fits.
+     */
+    const grid = el('div', { class: 'iconpick' });
+    const search = el('input', {
+      class: 'input sm', type: 'search', placeholder: 'Search icons',
     });
+    const drawer = el('div', { class: 'icondrawer', hidden: true }, [search, grid]);
 
-    const isNative = tab.target in NAV_NATIVE_TARGETS;
-    const isCustom = !isNative && tab.target !== '/';
-    const kind = el('select', { class: 'input' }, [
-      el('option', { value: '/', text: 'Website home', selected: tab.target === '/' }),
-      el('option', { value: 'custom', text: 'Website page…', selected: isCustom }),
-      ...Object.entries(NAV_NATIVE_TARGETS).map(([value, [text]]) =>
-        el('option', { value, text, selected: tab.target === value })),
-    ]);
-    const custom = el('input', {
-      class: 'input mono', value: isCustom ? tab.target || '' : '',
-      placeholder: '/shop or https://…',
-      style: isCustom ? '' : 'display:none',
-    });
-    kind.addEventListener('change', () => {
-      if (kind.value === 'custom') {
-        custom.style.display = '';
-        tab.target = custom.value;
-      } else {
-        custom.style.display = 'none';
-        tab.target = kind.value;
-        ensureFeatureFor(kind.value);
+    const chosen = () => tab.icon || 'home';
+    const trigger = el('button', {
+      class: 'icontrigger', type: 'button', title: 'Change icon',
+      'aria-label': `Icon: ${chosen().replace(/_/g, ' ')}`,
+      'aria-expanded': 'false',
+      onclick: () => {
+        drawer.hidden = !drawer.hidden;
+        trigger.setAttribute('aria-expanded', String(!drawer.hidden));
+        if (!drawer.hidden) { paintGrid(); search.focus(); }
+      },
+    }, [icon(chosen()), icon('chevron', 'gl caret')]);
+
+    function paintGrid() {
+      const term = search.value.trim().toLowerCase();
+      const hit = NAV_ICONS.filter((name) => name.includes(term));
+      clear(grid).append(...hit.map((name) => el('button', {
+        class: 'iconopt' + (chosen() === name ? ' on' : ''),
+        type: 'button',
+        // The name still travels, as a tooltip and for a screen reader. It is
+        // what the server stores and what a build error would quote back.
+        title: name.replace(/_/g, ' '),
+        'aria-label': name.replace(/_/g, ' '),
+        'aria-pressed': chosen() === name ? 'true' : 'false',
+        onclick: () => {
+          tab.icon = name;
+          markDirty();
+          // Picking one is the end of the job, so the drawer closes behind it.
+          drawer.hidden = true;
+          trigger.setAttribute('aria-expanded', 'false');
+          clear(trigger).append(icon(name), icon('chevron', 'gl caret'));
+          trigger.setAttribute('aria-label', `Icon: ${name.replace(/_/g, ' ')}`);
+          renderPreview();
+        },
+      }, [icon(name)])));
+      if (!hit.length) {
+        grid.append(el('p', { class: 'hint iconnone', text: `Nothing matches "${search.value.trim()}".` }));
       }
-      markDirty(); renderPreview();
-    });
-    custom.addEventListener('input', () => {
-      tab.target = custom.value; markDirty();
-    });
-
-    const remove = el('button', {
-      class: 'btn sm ghost', text: 'Remove', title: 'Remove this tab',
-      onclick: () => {
-        draft.nav_tabs.splice(index, 1);
-        markDirty(); renderTabs(); renderPreview();
-      },
-    });
-
-    /* Which other pages light this tab up. Collapsed, because most tabs never
-     * need one and the row is already four controls wide. */
-    tab.match = tab.match || [];
-    const panel = el('div', { class: 'tabmatch', style: 'display:none' });
-    const disclose = el('button', {
-      class: 'btn sm ghost',
-      title: 'Other pages that light up this tab',
-      text: tab.match.length ? `Also ${tab.match.length}` : 'Also…',
-      onclick: () => {
-        const open = panel.style.display === 'none';
-        panel.style.display = open ? '' : 'none';
-        if (open) renderMatch();
-      },
-    });
-
-    function renderMatch() {
-      const rows = tab.match.map((value, at) => {
-        const input = el('input', { class: 'input mono', value, placeholder: '/profile' });
-        input.addEventListener('input', () => { tab.match[at] = input.value; markDirty(); });
-        return el('div', { class: 'selrow' }, [
-          input,
-          el('button', {
-            class: 'btn sm ghost', text: 'Remove',
-            onclick: () => { tab.match.splice(at, 1); markDirty(); renderMatch(); },
-          }),
-        ]);
-      });
-      const blank = el('input', { class: 'input mono', placeholder: 'Add a path, e.g. /profile' });
-      blank.addEventListener('change', () => {
-        const value = blank.value.trim();
-        if (!value) return;
-        tab.match.push(value); markDirty(); renderMatch();
-      });
-      rows.push(el('div', { class: 'selrow' }, [blank]));
-      disclose.textContent = tab.match.length ? `Also ${tab.match.length}` : 'Also…';
-      clear(panel).append(
-        el('label', { text: 'Also light up this tab on' }),
-        ...rows,
-        el('p', { class: 'hint',
-          text: 'Paths on your site. When somebody reaches one of these by tapping a '
-            + `link, this tab lights up instead of the one they came from. Tapping it `
-            + `opens ${tab.target || 'this tab'}.` }),
-      );
     }
+    search.addEventListener('input', paintGrid);
 
-    const row = el('div', { class: 'tabedit' },
-      [label, icon, kind, custom, isNative ? null : disclose, remove].filter(Boolean));
-    return el('div', {}, [row, panel]);
+    /* The link, in a box, always there. It was a dropdown you had to set to
+     * "Website page…" before any box appeared, so the field for the link was
+     * hidden behind a choice you had to make before knowing it existed. */
+    const link = el('input', {
+      class: 'input mono', value: tab.target || homeLink(),
+      placeholder: homeLink(),
+    });
+    link.addEventListener('input', () => { tab.target = link.value; markDirty(); });
+
+    /* Three dots in the corner. Remove used to be a word on the same line as
+     * the label and the link, and three words on one row in a 300px column is
+     * why both fields ended up about 28px wide. */
+    const menu = el('div', { class: 'tabmenu', hidden: true }, [
+      el('button', {
+        class: 'tabmenuitem', type: 'button', text: 'Remove tab',
+        onclick: () => {
+          draft.nav_tabs.splice(index, 1);
+          markDirty(); renderTabs(); renderPreview();
+        },
+      }),
+    ]);
+    const more = el('button', {
+      class: 'tabmore', type: 'button', title: 'More', 'aria-label': 'More',
+      onclick: (event) => {
+        event.stopPropagation();
+        for (const other of document.querySelectorAll('.tabmenu')) {
+          if (other !== menu) other.hidden = true;
+        }
+        menu.hidden = !menu.hidden;
+      },
+    }, [icon('more_vert')]);
+
+    // Icon and name on one line, the link under it, the dots in the corner.
+    const top = el('div', { class: 'tabtop' }, [
+      trigger, label, el('div', { class: 'tabcorner' }, [more, menu]),
+    ]);
+    return el('div', { class: 'tabcard' }, [top, drawer, link]);
   }
 
   function renderTabs() {
@@ -1642,12 +1793,12 @@ function studioPage(app, draft, markDirty) {
       draft.nav_tabs.length < 5 ? el('button', {
         class: 'btn sm', text: '+ Add tab',
         onclick: () => {
-          draft.nav_tabs.push({ label: '', icon: 'article', target: '/' });
+          draft.nav_tabs.push({ label: '', icon: 'article', target: homeLink() });
           markDirty(); renderTabs(); renderPreview();
         },
       }) : null,
       el('p', { class: 'hint',
-        text: 'Tabs can open a page of the website or a native screen. Native screens switch their module on automatically.' }),
+        text: 'Each tab opens a page of your website - a path like /shop, or a full address.' }),
     ].filter(Boolean));
   }
 
@@ -1740,8 +1891,10 @@ function studioPage(app, draft, markDirty) {
   /* the offline screen - the built-in one, or the developer's own HTML */
 
   const offlineCard = el('section', { class: 'group' });
-  const stageTabs = el('div', { class: 'stagetabs' });
   // What the phone in the middle is showing: the app, or the offline screen.
+  // Set by the offline editor on the right - previewing a screen you are
+  // editing is what that button is for - rather than by a pair of tabs sitting
+  // permanently above the phone for a mode most visits never look at.
   let stageMode = 'app';
   let previewTimer = null;
 
@@ -1754,13 +1907,22 @@ function studioPage(app, draft, markDirty) {
 
   function renderOfflineCard() {
     clear(offlineCard).append(
-      el('h3', { class: 'group-title', text: 'Offline screen' }));
+      el('h3', { class: 'group-title', text: 'Offline' }),
+      // Both switches used to live on a page of their own in the sidebar,
+      // whose main content was a button sending you here. The preview cannot
+      // move, so the page was the half that could.
+      checkbox('Cache pages for faster loading', draft.cache_enabled,
+        (on) => { draft.cache_enabled = on; markDirty(); }),
+      checkbox('Show a branded screen when a page fails to load',
+        draft.offline_fallback_enabled,
+        (on) => {
+          draft.offline_fallback_enabled = on;
+          markDirty(); renderLibrary(); renderOfflineCard(); renderPreview();
+        },
+        'Replaces the browser error page with one that offers Try again and Go home.'),
+    );
 
-    if (!draft.offline_fallback_enabled) {
-      offlineCard.append(el('p', { class: 'hint',
-        text: 'Switched off. Turn on the Offline screens module in the library to design one.' }));
-      return;
-    }
+    if (!draft.offline_fallback_enabled) return;
 
     const custom = Boolean((draft.offline_custom_html || '').trim());
     const mode = el('select', { class: 'input' }, [
@@ -1877,20 +2039,9 @@ function studioPage(app, draft, markDirty) {
     const tabs = draft.nav_style === 'bottom' ? draft.nav_tabs : [];
     const hasNav = tabs.length > 0;
     const actions = [];
-    if (hasNav && has('Saved items')) actions.push('bookmark_add');
     if (hasNav && has('Native sharing')) actions.push('share');
 
-    // The switch above the phone, only once there is an offline screen to see.
-    clear(stageTabs);
-    if (draft.offline_fallback_enabled) {
-      stageTabs.append(...[['app', 'App'], ['offline', 'Offline screen']].map(([id, name]) =>
-        el('button', {
-          class: 'stagetab' + (stageMode === id ? ' on' : ''), text: name,
-          onclick: () => { stageMode = id; renderPreview(); },
-        })));
-    } else {
-      stageMode = 'app';
-    }
+    if (!draft.offline_fallback_enabled) stageMode = 'app';
 
     const statusIcons = stageMode === 'offline'
       ? ['signal_cellular_alt', 'battery_full']
@@ -1982,11 +2133,7 @@ function studioPage(app, draft, markDirty) {
       library,
     ]),
     el('div', { class: 'studio-stage' }, [
-      stageTabs,
       preview,
-      el('p', { class: 'hint', style: 'text-align:center',
-        text: 'Live preview with your real website. If it stays blank, the site '
-          + 'refuses to be embedded in other pages - the built app is unaffected.' }),
     ]),
     el('div', { class: 'studio-side' }, [
       el('section', { class: 'group' }, [
@@ -1995,7 +2142,7 @@ function studioPage(app, draft, markDirty) {
           el('div', { class: 'colorrow' }, [color, hex]),
           "The app's accent - buttons, highlights, the active tab. Use the website's brand colour."),
         field('Navigation', styleSel,
-          'A bottom bar with a native top app bar. Needed for the Saved, Downloads and Settings screens.'),
+          'A bottom bar with a native top app bar.'),
         tabsField,
       ]),
       siteNavCard,
@@ -2463,28 +2610,6 @@ function testCard(app, status) {
       el('a', { href: '/docs/notifications-setup#checking',
         text: 'If it does not arrive' }),
       '.',
-    ]),
-  ]);
-}
-
-function offlineSection(draft, markDirty) {
-  const custom = Boolean((draft.offline_custom_html || '').trim());
-  return fieldset('offline', '', [
-    checkbox('Cache pages for faster loading', draft.cache_enabled,
-      (on) => { draft.cache_enabled = on; markDirty(); }),
-    checkbox('Show a branded screen when a page fails to load',
-      draft.offline_fallback_enabled,
-      (on) => { draft.offline_fallback_enabled = on; markDirty(); },
-      'Replaces the browser error page with one that offers Try again and Go home.'),
-    el('div', { class: 'banner info' }, [
-      el('b', { text: custom ? 'Using your own offline screen' : 'Using the built-in screen' }),
-      custom
-        ? 'Your HTML shows whenever a page cannot load. Edit it in the Studio.'
-        : 'It follows your theme colour automatically. Prefer your own design? Paste your HTML in the Studio.',
-      el('button', {
-        class: 'btn sm', style: 'margin-top:10px', text: 'Open the Studio',
-        onclick: () => go(`#/app/${draft.id}/studio`),
-      }),
     ]),
   ]);
 }
@@ -3335,6 +3460,14 @@ function megabytes(bytes) {
     : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }
 
+/* Any open dots menu closes on a click elsewhere. One listener on the document
+ * rather than one per menu, because the menus are rebuilt on every render. */
+document.addEventListener('click', () => {
+  for (const menu of document.querySelectorAll('.tabmenu:not([hidden])')) {
+    menu.hidden = true;
+  }
+});
+
 window.addEventListener('hashchange', route);
 window.addEventListener('beforeunload', (event) => {
   if (state.dirty) event.preventDefault();
@@ -3342,6 +3475,8 @@ window.addEventListener('beforeunload', (event) => {
 
 /* Session first, then draw. Routing before we know who this is would flash the
  * app shell at somebody who is about to be shown a login screen. */
+document.getElementById('rail-toggle').addEventListener('click', toggleRail);
+
 (async () => {
   await loadSession();
   route();

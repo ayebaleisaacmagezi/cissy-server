@@ -18,7 +18,11 @@ import shutil
 from pathlib import Path
 
 from . import firebase, template
-from .config import AppConfig
+from .config import (
+    DEFAULT_SPLASH_DARK,
+    DEFAULT_SPLASH_LIGHT,
+    AppConfig,
+)
 from .errors import CissyError
 from .process import LogSink, stream
 from .store import ProjectStore
@@ -56,7 +60,7 @@ def generate(
     )
     _write(
         directory / "lib" / "main.dart",
-        template.main_dart(config, splash_asset, offline_asset),
+        template.main_dart(config, splash_asset, offline_asset, icon_asset),
     )
     _write(
         directory / "android" / "app" / "src" / "main" / "AndroidManifest.xml",
@@ -351,7 +355,29 @@ def _apply_launch_screen(
         if icon_drawable.is_file():
             icon_drawable.unlink()
 
-    background = template.launch_background(has_splash)
+    # The icon splash has no image for the launch window to draw, so the window
+    # is its background colour instead - the same colour the first Flutter
+    # frame paints, which makes the handover invisible. Written per-variant so
+    # a dark-mode phone gets the dark one.
+    icon_splash = config.splash_style != "image"
+    if icon_splash:
+        for variant, colour in (
+            ("values", config.splash_bg_light or DEFAULT_SPLASH_LIGHT),
+            ("values-night", config.splash_bg_dark or DEFAULT_SPLASH_DARK),
+        ):
+            _write(
+                res / variant / "cissy_splash.xml",
+                template.splash_colour_resource(colour),
+            )
+    else:
+        for variant in ("values", "values-night"):
+            stale = res / variant / "cissy_splash.xml"
+            if stale.is_file():
+                stale.unlink()
+
+    background = template.launch_background(
+        has_splash, colour=DEFAULT_SPLASH_LIGHT if icon_splash else ""
+    )
     for variant in ("drawable", "drawable-v21"):
         _write(res / variant / "launch_background.xml", background)
 
@@ -360,8 +386,15 @@ def _apply_launch_screen(
     # the icon flash this exists to remove.
     for variant, night in (("values-v31", False), ("values-night-v31", True)):
         path = res / variant / "styles.xml"
-        if has_splash:
-            _write(path, template.styles_v31(night=night))
+        if has_splash or icon_splash:
+            colour = ""
+            if icon_splash:
+                colour = (
+                    (config.splash_bg_dark or DEFAULT_SPLASH_DARK)
+                    if night
+                    else (config.splash_bg_light or DEFAULT_SPLASH_LIGHT)
+                )
+            _write(path, template.styles_v31(night=night, colour=colour))
         elif path.is_file():
             path.unlink()
 

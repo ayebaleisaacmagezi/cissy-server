@@ -18,15 +18,17 @@ from __future__ import annotations
 import json
 
 from ..config import AppConfig
-from .common import _dart_bool, dart_string, deep_link_scheme, with_url_flag
+from .common import (
+    _dart_bool,
+    dart_string,
+    deep_link_scheme,
+    splash_widget,
+    with_url_flag,
+)
 from . import push
 from .nav import _root_shell, has_tab_echo
 from .screens import (
-    _DOWNLOADS_SCREEN,
     _LIST_HELPERS,
-    _SAVED_SCREEN,
-    _SAVED_STORE,
-    _SETTINGS_SCREEN,
 )
 
 
@@ -37,6 +39,7 @@ def main_dart(
     config: AppConfig,
     splash_asset: str | None = None,
     offline_asset: str | None = None,
+    icon_asset: str | None = None,
 ) -> str:
     features = set(config.features)
     has_share = "Native sharing" in features
@@ -46,8 +49,6 @@ def main_dart(
     has_pull_refresh = "Pull to refresh" in features
     has_camera = "Camera" in features
     has_uploads = "File upload" in features
-    has_saved = "Saved items" in features
-    has_settings = "Settings screen" in features
     has_fallback = config.offline_fallback_enabled
     has_custom_offline = has_fallback and bool(offline_asset)
     has_bridge = has_share or has_location or config.push_enabled
@@ -55,11 +56,7 @@ def main_dart(
     has_nav = config.nav_style == "bottom" and len(config.nav_tabs) >= 2
     has_echo = has_nav and has_tab_echo(config)
     has_push = config.push_enabled
-    has_inbox = has_push and has_nav and push.has_inbox(config)
     has_banner = has_push and config.push_foreground == "banner"
-    has_downloads_screen = has_nav and has_downloads and any(
-        tab.get("target") == "native:downloads" for tab in config.nav_tabs
-    )
 
     out: list[str] = []
     add = out.append
@@ -69,7 +66,7 @@ def main_dart(
     if has_policy:
         # UnmodifiableListView, for the user scripts the WebView is built with.
         add("import 'dart:collection';")
-    if has_saved or has_push:
+    if has_push:
         add("import 'dart:convert';")
     if has_downloads or has_push:
         add("import 'dart:io';")
@@ -92,7 +89,7 @@ def main_dart(
     if has_push:
         for line in push.imports(config):
             add(line)
-    if has_saved or has_push:
+    if has_push:
         add("import 'package:shared_preferences/shared_preferences.dart';")
     add("")
 
@@ -131,12 +128,11 @@ def main_dart(
     if has_push:
         add(push.BACKGROUND_HANDLER)
         add(push.router(config))
-        add(push.inbox(config))
         add(push.service(config))
         add(push.PROMPT_SHEET)
 
     if has_nav:
-        add(_root_shell(config, splash_asset=splash_asset))
+        add(_root_shell(config, splash_asset=splash_asset, icon_asset=icon_asset))
 
     if has_downloads:
         add(_DOWNLOADS_DIRECTORY)
@@ -238,20 +234,17 @@ def main_dart(
     if has_downloads:
         add(_DOWNLOAD)
 
-    if has_saved and has_nav:
-        add(_SAVE_CURRENT_PAGE)
-
     add(_SHOW_MESSAGE)
     add(
         _build_method(
             config,
             splash_asset=splash_asset,
+            icon_asset=icon_asset,
             has_fallback=has_fallback,
             has_bridge=has_bridge,
             has_downloads=has_downloads,
             has_camera=has_camera,
             has_nav=has_nav,
-            has_saved=has_saved,
             has_share=has_share,
             has_custom_offline=has_custom_offline,
             has_policy=has_policy,
@@ -266,21 +259,8 @@ def main_dart(
     elif has_fallback:
         add(_ERROR_VIEW)
 
-    if has_saved:
-        add(_SAVED_STORE)
-        add(_SAVED_SCREEN)
-
-    if has_downloads_screen:
-        add(_DOWNLOADS_SCREEN)
-
-    if has_settings:
-        add(_SETTINGS_SCREEN)
-
     if has_push:
         add(push.SETTINGS_SCREEN)
-        add(push.INBOX_SCREEN)
-
-    if has_saved or has_downloads_screen or has_push:
         add(_LIST_HELPERS)
 
     return "\n".join(out).rstrip() + "\n"
@@ -966,29 +946,20 @@ def _build_method(
     config: AppConfig,
     *,
     splash_asset: str | None,
+    icon_asset: str | None = None,
     has_fallback: bool,
     has_bridge: bool,
     has_downloads: bool,
     has_camera: bool,
     has_nav: bool = False,
-    has_saved: bool = False,
     has_share: bool = False,
     has_custom_offline: bool = False,
     has_policy: bool = False,
     has_echo: bool = False,
     has_push: bool = False,
 ) -> str:
-    splash = (
-        "const SizedBox.expand()"
-        if not splash_asset
-        else (
-            "Image.asset(\n"
-            f"                  {dart_string(splash_asset)},\n"
-            "                  fit: BoxFit.cover,\n"
-            "                  width: double.infinity,\n"
-            "                  height: double.infinity,\n"
-            "                )"
-        )
+    splash = splash_widget(
+        config, splash_asset=splash_asset, icon_asset=icon_asset
     )
     user_agent = (
         "null" if not config.custom_user_agent else dart_string(config.custom_user_agent)
@@ -1008,16 +979,10 @@ def _build_method(
         # user and the website.
         add("    return Scaffold(")
         add("        backgroundColor: Theme.of(context).colorScheme.surface,")
-        if has_saved or has_share:
+        if has_share:
             add("        appBar: AppBar(")
             add("          title: const Text(appTitle),")
             add("          actions: [")
-            if has_saved:
-                add("            IconButton(")
-                add("              tooltip: 'Save this page',")
-                add("              icon: const Icon(Icons.bookmark_add_outlined),")
-                add("              onPressed: _saveCurrentPage,")
-                add("            ),")
             if has_share:
                 add("            IconButton(")
                 add("              tooltip: 'Share this page',")
@@ -1126,15 +1091,6 @@ def _build_method(
         add("                  final reached = url?.toString();")
         add("                  if (reached != null) {")
         add("                    widget.onUrlChanged?.call(reached);")
-        add("                  }")
-    if has_saved:
-        add("                  final visited = url?.toString();")
-        add("                  if (visited != null && visited.startsWith('http')) {")
-        add("                    final title = await controller?.getTitle();")
-        add("                    await SavedStore.recordVisit(")
-        add("                      title == null || title.isEmpty ? visited : title,")
-        add("                      visited,")
-        add("                    );")
         add("                  }")
     add("                },")
     add("                onReceivedError: (_, request, error) {")
