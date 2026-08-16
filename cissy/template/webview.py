@@ -128,7 +128,7 @@ def main_dart(
     if has_push:
         add(push.BACKGROUND_HANDLER)
         add(push.router(config))
-        add(push.service(config))
+        add(push.service(config, has_icon=icon_asset is not None))
         add(push.PROMPT_SHEET)
 
     if has_nav:

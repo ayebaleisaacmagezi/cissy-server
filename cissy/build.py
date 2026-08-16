@@ -206,6 +206,7 @@ class BuildRunner:
             self._flutter(build, project_dir, ["pub", "get"])
 
             self._generate_icons(build, config, project_dir)
+            self._notification_icon(build, config, project_dir)
 
             args = self._build_args(build, config)
             build.log("$ flutter " + " ".join(args))
@@ -298,6 +299,35 @@ class BuildRunner:
             )
         else:
             build.log("Launcher icons generated for Android and iOS.")
+
+    def _notification_icon(self, build: Build, config: AppConfig, cwd: Path) -> None:
+        """Trace the uploaded logo into the status-bar notification icon.
+
+        Runs the tool `generate` wrote into the project, here because it needs
+        `package:image`, which the `pub get` above has just fetched. Not fatal:
+        generate already left a plain placeholder at the same resource name, so
+        a failure here means a plain square in the status bar - said loudly,
+        never a build stopped over an icon.
+        """
+        tool = cwd / "tool" / "notification_icon.dart"
+        if not (config.push_enabled and tool.is_file()):
+            return
+
+        build.log("$ dart run tool/notification_icon.dart")
+        try:
+            code = stream(
+                ["dart", "run", "tool/notification_icon.dart"],
+                cwd=cwd,
+                on_line=build.log,
+            )
+        except Exception as error:  # noqa: BLE001 - never sink a whole build
+            build.log(f"WARNING: could not run the notification icon tool ({error}).")
+            code = 1
+        if code != 0:
+            build.log(
+                "WARNING: the status-bar icon for notifications stays a plain "
+                "square in this build."
+            )
 
     def _flutter(self, build: Build, cwd: Path, args: list[str]) -> None:
         code = stream(["flutter", *args], cwd=cwd, on_line=build.log)

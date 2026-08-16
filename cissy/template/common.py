@@ -29,6 +29,7 @@ DEPENDENCIES = {
     "connectivity_plus": "^6.1.0",
     "shared_preferences": "^2.3.2",
     "flutter_launcher_icons": "^0.14.4",
+    "image": "^4.5.0",
 }
 
 

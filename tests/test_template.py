@@ -702,3 +702,77 @@ class PushTest(unittest.TestCase):
 
     def test_no_bridge_at_all_without_push_share_or_location(self):
         self.assertNotIn("addJavaScriptHandler", template.main_dart(make()))
+
+
+class StatusBarIconTest(unittest.TestCase):
+    """The notification icon in the status bar.
+
+    Android keeps only the alpha channel of a small icon, so shipping the
+    launcher icon there renders as a featureless square. With a logo uploaded,
+    everything points at the silhouette a build-time tool traces from it; with
+    no logo there is nothing to trace, and the launcher icon at least exists.
+    """
+
+    ICON = "assets/icon/logo.png"
+
+    def dart(self, icon=ICON, **overrides) -> str:
+        base = dict(push_enabled=True)
+        base.update(overrides)
+        return template.main_dart(make(**base), None, None, icon)
+
+    def test_with_a_logo_the_silhouette_is_the_small_icon(self):
+        source = self.dart()
+        self.assertIn(
+            f"AndroidInitializationSettings('@drawable/{template.STAT_ICON}')",
+            source,
+        )
+
+    def test_without_a_logo_the_launcher_icon_still_exists(self):
+        source = self.dart(icon=None)
+        self.assertIn("AndroidInitializationSettings('@mipmap/ic_launcher')", source)
+
+    def test_the_manifest_names_the_icon_for_background_messages(self):
+        # FCM displays those itself, so no Dart gets a say in the icon.
+        manifest = template.android_manifest(
+            make(push_enabled=True), has_push_icon=True
+        )
+        self.assertIn("default_notification_icon", manifest)
+        self.assertIn(f"@drawable/{template.STAT_ICON}", manifest)
+
+    def test_the_manifest_stays_quiet_without_a_logo(self):
+        manifest = template.android_manifest(make(push_enabled=True))
+        self.assertNotIn("default_notification_icon", manifest)
+        self.assertNotIn("default_notification_color", manifest)
+
+    def test_the_accent_colour_follows_the_theme(self):
+        manifest = template.android_manifest(
+            make(push_enabled=True, theme_color="#b3561d"), has_push_icon=True
+        )
+        self.assertIn("default_notification_color", manifest)
+        self.assertIn(f"@color/{template.NOTIFICATION_COLOUR}", manifest)
+        resource = template.notification_colour_resource("#b3561d")
+        self.assertIn("#b3561d", resource)
+        self.assertIn(template.NOTIFICATION_COLOUR, resource)
+
+    def test_no_theme_colour_means_no_colour_meta_data(self):
+        manifest = template.android_manifest(
+            make(push_enabled=True), has_push_icon=True
+        )
+        self.assertNotIn("default_notification_color", manifest)
+
+    def test_the_tracing_tool_bakes_in_the_logo_and_every_density(self):
+        tool = template.notification_icon_tool(self.ICON)
+        self.assertIn(f'const source = "{self.ICON}";', tool)
+        self.assertIn(template.STAT_ICON, tool)
+        for density in ("mdpi", "hdpi", "xhdpi", "xxhdpi", "xxxhdpi"):
+            self.assertIn(density, tool)
+
+    def test_push_with_a_logo_adds_the_image_library(self):
+        # What the tracing tool decodes the logo with, dev-only.
+        pubspec = template.pubspec(make(push_enabled=True), None, self.ICON)
+        dev_block = pubspec.split("dev_dependencies:")[1].split("\nflutter:")[0]
+        self.assertIn("image:", dev_block)
+
+    def test_no_logo_or_no_push_means_no_image_library(self):
+        self.assertNotIn("\n  image:", template.pubspec(make(push_enabled=True)))
+        self.assertNotIn("\n  image:", template.pubspec(make(), None, self.ICON))

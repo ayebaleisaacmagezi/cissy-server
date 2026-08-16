@@ -64,12 +64,15 @@ def generate(
     )
     _write(
         directory / "android" / "app" / "src" / "main" / "AndroidManifest.xml",
-        template.android_manifest(config),
+        template.android_manifest(
+            config, has_push_icon=config.push_enabled and icon_asset is not None
+        ),
     )
     _apply_launch_screen(config, store, directory)
     _write(directory / "android" / "gradle.properties", template.gradle_properties())
     _write_main_activity(directory, config)
     _apply_firebase(config, store, directory, on_log)
+    _apply_notification_icon(config, directory, icon_asset)
     _patch_info_plist(directory, config, on_log)
     _remove_default_test(directory)
     _pin_android_toolchain(directory, on_log)
@@ -416,6 +419,91 @@ def _copy_icon(config: AppConfig, store: ProjectStore, directory: Path) -> str |
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source, target)
     return f"assets/icon/{config.icon_file}"
+
+
+# ── the status-bar notification icon ─────────────────────────────────────
+
+
+def _apply_notification_icon(
+    config: AppConfig, directory: Path, icon_asset: str | None
+) -> None:
+    """The Android status-bar icon, or take every trace of it back out.
+
+    Android renders only the alpha channel of a notification's small icon, so
+    the launcher icon shows up as a featureless tinted square. The real fix -
+    a white-on-transparent silhouette traced from the logo - needs an image
+    library, so `tool/notification_icon.dart` is written here and run by the
+    build, after `pub get` has fetched one.
+
+    What is written here is the guarantee underneath that: a plain placeholder
+    PNG for every density, so the resource the manifest and the Dart both name
+    exists even in a project that was downloaded and built by hand. The worst
+    case is a plain square in the status bar - exactly what shipping the
+    launcher icon used to look like - never a build that fails over a missing
+    resource. The tool overwrites these with the traced silhouette.
+    """
+    if not (directory / "android").is_dir():
+        return
+
+    tool = directory / "tool" / "notification_icon.dart"
+    res = directory / "android" / "app" / "src" / "main" / "res"
+    colour_file = res / "values" / f"{template.NOTIFICATION_COLOUR}.xml"
+
+    if not (config.push_enabled and icon_asset):
+        # The scaffold survives between builds, so switching push off (or
+        # removing the icon) has to remove all of this, not orphan it.
+        tool.unlink(missing_ok=True)
+        colour_file.unlink(missing_ok=True)
+        for density in template.STAT_ICON_SIZES:
+            stale = res / f"drawable-{density}" / f"{template.STAT_ICON}.png"
+            stale.unlink(missing_ok=True)
+        return
+
+    tool.parent.mkdir(parents=True, exist_ok=True)
+    _write(tool, template.notification_icon_tool(icon_asset))
+
+    if config.theme_color:
+        _write(
+            colour_file, template.notification_colour_resource(config.theme_color)
+        )
+    else:
+        colour_file.unlink(missing_ok=True)
+
+    # Only when missing: a silhouette a previous build traced is better than
+    # a square, and the next build's tool run replaces it either way.
+    for density, size in template.STAT_ICON_SIZES.items():
+        target = res / f"drawable-{density}" / f"{template.STAT_ICON}.png"
+        if not target.is_file():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(_plain_square_png(size))
+
+
+def _plain_square_png(size: int) -> bytes:
+    """A solid white PNG, written with the standard library.
+
+    Deliberately unremarkable: it is the placeholder under the traced
+    silhouette, and a white square is what the status bar was already showing
+    before any of this existed.
+    """
+    import struct
+    import zlib
+
+    def chunk(tag: bytes, data: bytes) -> bytes:
+        body = tag + data
+        return (
+            struct.pack(">I", len(data))
+            + body
+            + struct.pack(">I", zlib.crc32(body) & 0xFFFFFFFF)
+        )
+
+    # 8-bit RGBA, one filter byte (0, "none") per row.
+    raw = b"".join(b"\x00" + b"\xff\xff\xff\xff" * size for _ in range(size))
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", size, size, 8, 6, 0, 0, 0))
+        + chunk(b"IDAT", zlib.compress(raw))
+        + chunk(b"IEND", b"")
+    )
 
 
 # ── Firebase ─────────────────────────────────────────────────────────────

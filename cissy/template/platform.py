@@ -69,6 +69,11 @@ def pubspec(
     ]
     if icon_asset:
         lines.append(f"  flutter_launcher_icons: {DEPENDENCIES['flutter_launcher_icons']}")
+        if config.push_enabled:
+            # What tool/notification_icon.dart decodes the logo with, to trace
+            # the status-bar icon at build time. Dev-only: nothing in the app
+            # itself imports it.
+            lines.append(f"  image: {DEPENDENCIES['image']}")
 
     lines += [
         "",
@@ -110,7 +115,7 @@ def pubspec(
 # ── android ──────────────────────────────────────────────────────────────
 
 
-def android_manifest(config: AppConfig) -> str:
+def android_manifest(config: AppConfig, *, has_push_icon: bool = False) -> str:
     features = set(config.features)
     label = escape(config.display_name, quote=True)
     host = _host_of(config.website_url)
@@ -163,6 +168,20 @@ def android_manifest(config: AppConfig) -> str:
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="{push.CHANNEL_ID}" />"""
+        # The status-bar icon for messages FCM displays itself - the app is in
+        # the background then, so no Dart gets a say. Only named when a logo
+        # exists to trace it from; the fallback is the launcher icon, which is
+        # what FCM uses on its own anyway.
+        if has_push_icon:
+            push_meta += f"""
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/{push.STAT_ICON}" />"""
+            if config.theme_color:
+                push_meta += f"""
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/{NOTIFICATION_COLOUR}" />"""
 
     cleartext = "true" if not config.require_https else "false"
 
@@ -278,6 +297,24 @@ def splash_colour_resource(colour: str) -> str:
     return f"""<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="cissy_splash_background">{colour}</color>
+</resources>
+"""
+
+
+# The resource name the manifest's default_notification_color points at.
+NOTIFICATION_COLOUR = "cissy_notification"
+
+
+def notification_colour_resource(colour: str) -> str:
+    """The brand colour Android tints notification accents with.
+
+    A resource rather than a literal because the manifest meta-data can only
+    name a resource. One value for light and dark: Android adjusts the tint
+    for contrast itself, which a hand-picked night variant would fight.
+    """
+    return f"""<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="{NOTIFICATION_COLOUR}">{colour}</color>
 </resources>
 """
 

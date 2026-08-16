@@ -28,7 +28,10 @@ holds the two client configuration files - which ship inside every app and are
 not secrets - and never the service-account key that can actually send. The
 generated app carries the registration, the permission prompt, categories, a
 notification router and a local history; the Notifications page generates
-working sending code for the customer's own backend.
+working sending code for the customer's own backend. The status-bar icon is a
+silhouette traced from the uploaded logo at build time, because Android keeps
+only the alpha channel of a small icon and would show the logo itself as a
+plain square.
 
 Taking the website's own navigation down, so a native bottom bar is not simply
 a second one, and lighting up whichever tab the page on screen belongs to.

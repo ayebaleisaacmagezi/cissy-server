@@ -25,22 +25,29 @@ from .common import (
     project_name,
 )
 from .platform import (
+    NOTIFICATION_COLOUR,
     SPLASH_DRAWABLE,
     android_manifest,
     gradle_properties,
     ios_usage_descriptions,
     launch_background,
     main_activity,
+    notification_colour_resource,
     pubspec,
     splash_colour_resource,
     splash_icon_drawable,
     styles_v31,
 )
+from .push import STAT_ICON, STAT_ICON_SIZES
+from .push import icon_tool as notification_icon_tool
 from .webview import main_dart
 
 __all__ = [
     "DEPENDENCIES",
+    "NOTIFICATION_COLOUR",
     "SPLASH_DRAWABLE",
+    "STAT_ICON",
+    "STAT_ICON_SIZES",
     "android_manifest",
     "dart_string",
     "deep_link_scheme",
@@ -49,6 +56,8 @@ __all__ = [
     "launch_background",
     "main_activity",
     "main_dart",
+    "notification_colour_resource",
+    "notification_icon_tool",
     "organisation",
     "project_name",
     "pubspec",

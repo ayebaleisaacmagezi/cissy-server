@@ -22,9 +22,11 @@ from cissy.generate import (
     PINNED_AGP,
     PINNED_GRADLE,
     _apply_firebase,
+    _apply_notification_icon,
     _patch_info_plist,
     _apply_launch_screen,
     _pin_android_toolchain,
+    _plain_square_png,
     _write_offline_html,
 )
 from cissy.store import ProjectStore
@@ -423,6 +425,92 @@ class FirebaseWiringTest(unittest.TestCase):
         self.apply(self.config())
         self.assertTrue(any("Android app is unaffected" in line
                             for line in self.logged))
+
+
+class NotificationIconTest(unittest.TestCase):
+    """The status-bar icon: the tracing tool, and the placeholder under it."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.project = self.tmp / "generated"
+        (self.project / "android" / "app" / "src" / "main" / "res").mkdir(
+            parents=True
+        )
+
+    def config(self, **overrides) -> AppConfig:
+        base = dict(
+            id="jokeb",
+            name="Jokeb",
+            website_url="https://jokeb.example",
+            android_package_id="com.jokeb.mobile",
+            ios_bundle_id="com.jokeb.mobile",
+            push_enabled=True,
+        )
+        base.update(overrides)
+        return AppConfig(**base)
+
+    def apply(self, config, icon_asset="assets/icon/logo.png"):
+        _apply_notification_icon(config, self.project, icon_asset)
+
+    def tool(self) -> Path:
+        return self.project / "tool" / "notification_icon.dart"
+
+    def drawables(self) -> list[Path]:
+        res = self.project / "android" / "app" / "src" / "main" / "res"
+        return sorted(res.glob(f"drawable-*/{template.STAT_ICON}.png"))
+
+    def test_writes_the_tool_and_a_placeholder_for_every_density(self):
+        # The placeholder is the guarantee: the manifest and the Dart name the
+        # resource, so it has to exist even in a project built by hand before
+        # the tracing tool has ever run.
+        self.apply(self.config())
+        self.assertTrue(self.tool().is_file())
+        self.assertIn("assets/icon/logo.png", self.tool().read_text())
+        self.assertEqual(len(self.drawables()), len(template.STAT_ICON_SIZES))
+        for path in self.drawables():
+            self.assertEqual(path.read_bytes()[:8], b"\x89PNG\r\n\x1a\n")
+
+    def test_a_traced_silhouette_is_not_clobbered_by_the_next_generate(self):
+        # A silhouette from a previous build is better than a square, and the
+        # next build's tool run replaces it either way.
+        self.apply(self.config())
+        traced = self.drawables()[0]
+        traced.write_bytes(b"\x89PNG\r\n\x1a\ntraced")
+        self.apply(self.config())
+        self.assertEqual(traced.read_bytes(), b"\x89PNG\r\n\x1a\ntraced")
+
+    def test_the_theme_colour_becomes_a_resource(self):
+        self.apply(self.config(theme_color="#b3561d"))
+        colour = (
+            self.project / "android" / "app" / "src" / "main" / "res"
+            / "values" / f"{template.NOTIFICATION_COLOUR}.xml"
+        )
+        self.assertIn("#b3561d", colour.read_text())
+
+    def test_turning_push_off_takes_it_all_back_out(self):
+        # The scaffold survives between builds.
+        self.apply(self.config(theme_color="#b3561d"))
+        self.apply(self.config(push_enabled=False, theme_color="#b3561d"))
+        self.assertFalse(self.tool().exists())
+        self.assertEqual(self.drawables(), [])
+        colour = (
+            self.project / "android" / "app" / "src" / "main" / "res"
+            / "values" / f"{template.NOTIFICATION_COLOUR}.xml"
+        )
+        self.assertFalse(colour.exists())
+
+    def test_no_logo_means_nothing_is_written(self):
+        self.apply(self.config(), icon_asset=None)
+        self.assertFalse(self.tool().exists())
+        self.assertEqual(self.drawables(), [])
+
+    def test_the_placeholder_is_a_valid_png_of_the_right_size(self):
+        data = _plain_square_png(24)
+        self.assertEqual(data[:8], b"\x89PNG\r\n\x1a\n")
+        # Width and height live in IHDR, big-endian, right after the header.
+        self.assertEqual(int.from_bytes(data[16:20], "big"), 24)
+        self.assertEqual(int.from_bytes(data[20:24], "big"), 24)
 
 
 class IosPushTest(unittest.TestCase):

@@ -274,6 +274,12 @@ Decisions worth keeping:
 - `project.pbxproj` is not patched. Adding the push capability there means
   writing a format with no public specification, and getting it wrong fails in
   Xcode on the customer's Mac where nobody here can see it. One checkbox.
+- The status-bar icon is traced from the uploaded logo at build time, by a Dart
+  tool generated into the project - Android keeps only the alpha channel of a
+  small icon, so the launcher icon renders as a featureless square. Generate
+  leaves a placeholder PNG at the same resource name, so a project built by
+  hand before the tool ever ran still resolves every resource; the worst case
+  is the square the status bar used to show, never a failed build.
 
 Two bugs the tests caught that `flutter analyze` could not: the messenger key
 was never attached to `MaterialApp`, so a foreground banner would have had a
